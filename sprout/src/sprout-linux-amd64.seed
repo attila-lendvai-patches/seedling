@@ -271,9 +271,13 @@ rax swap mov_rr,x
 
 \ assembler macros
 
-{: tos_load               \ top of data stack -> rax
+{: tos_load_into ( reg -- ) \ top of data stack -> reg
 rbx 8 sub_rr,s
-rax rbx mov_rr,[rr]
+rbx mov_rr,[rr]
+}
+
+{: tos_load               \ top of data stack -> rax
+rax tos_load_into
 }
 
 {: tos_store              \ rax -> data stack
@@ -1057,8 +1061,7 @@ ret
 \ compare strings for equality
 3 label
 rsi rax mov_rr,rr
-tos_load
-rdi rax mov_rr,rr
+rdi tos_load_into
 rcx rcx xor_rr,rr
 4 label
 rcx rsi cmp_rl,[rr]
