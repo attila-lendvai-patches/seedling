@@ -284,6 +284,10 @@ create labels
 3  constant sys.close
 A  constant sys.mprotect
 C  constant sys.brk
+38 constant sys.clone
+39 constant sys.fork
+3A constant sys.vfork
+3B constant sys.execve
 3C constant sys.exit
 
 {: syscall ( n -- )
@@ -1225,6 +1229,22 @@ ret
 native bye
 rdi 0 mov_rr,x
 sys.exit syscall
+
+native vfork
+sys.vfork syscall
+tos_store
+ret
+
+native fork
+sys.fork syscall
+tos_store
+ret
+
+native execve
+rdi rax mov_rr,rr          \ path
+tos_load rsi rax mov_rr,rr \ argv
+tos_load rdx rax mov_rr,rr \ envp
+sys.execve syscall         \ never returns
 
 \ constants
 TIB address tib
