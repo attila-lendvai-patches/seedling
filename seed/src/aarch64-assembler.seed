@@ -1,0 +1,398 @@
+output \ this must be on the first line
+
+\ This is the Seed source for amd64 Linux
+
+\ Requirements
+\ It can be compiled by any Seed that has at least 16 bit
+\ cells and about 20 kilobytes of free RAM space available.
+
+\ Assembler
+\ This implements a very limited subset of the amd64
+\ assembly language and is only suited for compiling
+\ code that lives in the virtual address range between
+\ 10000 and 17FFF inclusive.
+
+\ Glossary
+\ TOS: top of stack
+
+\ Imlementation
+\ RAX holds TOS, the top element of the data stack
+\ RBX points to the data stack (but top element is in RAX)
+\ RCX is a scratch register
+\ RSP is the call stack
+
+hex
+
+\ Auxiliary functions for the Assembler
+
+\ execute n times
+{: times ( x n -- )
+{ 0<> 1- >r dup >r execute r> r> }~self
+{ drop }~ drop
+}~|
+
+\ extract least significant 8 bits
+{: lsb		dup 8 rshift swap FF and }
+
+\ Heap manipulation words for the assembler
+\ note, that it should work on both little-endian and
+\ big-endian architectures, with various cell sizes.
+
+\ 16-bit little-endian comma
+{: w,		lsb c, c, }
+
+\ 32-bit little-endian comma
+{: d,		{ lsb c, } 3 times c, }
+
+\ 64-bit little-endian comma
+{: q,		{ lsb c, } 7 times c, }
+
+\ 64-bit virtual address comma
+{: a,		w, 1 w, 0 d, }
+
+\ 16-bit little-endian fetch
+{: w@		dup c@ swap 1+ c@ 8 lshift or }
+
+\ 16-bit little-endian store
+{: w!		dup >r 1+ >r lsb swap r> c! r> c! }
+
+\ dump the tail of the heap for outputting the result
+{: dump		here over - write drop }
+
+{: bit_size_to_mask ( bit_size -- mask )
+  1 swap lshift 1-
+}
+
+\ Offset between host and target addresses
+0 variable host_target_offset
+
+\ Assembler directives
+{: $		here host_target_offset @ - }
+{: org		here swap - host_target_offset ! }
+{: align	{ dup $ swap 1- and 0<> drop 0 c, }~self ' drop }~|
+
+\ Labels
+
+\ 8 labels must be enough
+create labels
+8 cells allot
+
+\
+\ Naming convention
+\
+\ Labels can be forward/backward, short/long, and
+\ relative/absolute.
+\
+\ Forward labels: _f suffix.
+\
+\ Short labels: _s suffix. Their distance must be within
+\ (-128..127). Note that the _sf suffix combination is also
+\ possible.
+\
+\ Relative labels: 'r' prefix in their name.
+\
+\ There are 3 classes of label primitives:
+\
+\ - label defining primitives: ! suffix
+\
+\ - label emitting primitives: , suffix
+\
+\ - other label primitives without any suffix put the label on
+\   the stack in some form.
+\
+\ Backward labels: at the point when they are needed their
+\ address is already known. We just store the current address
+\ when they are defined, and read it from the label_cell when
+\ they are needed.
+\
+\ Forward labels are trickier: we store the location where the
+\ address of the future label is needed (typically as a
+\ component of a machine code instruction), and when the point
+\ is reached in the emission where we should point to, then the
+\ label-defining counterpart will emit the address (or offset)
+\ into the previously registered location. Important corollary:
+\ forward labels can only have one reference to them.
+
+\ label cell address
+{: label_cell	cells labels + }
+
+\
+\ Backward labels
+\
+
+\ Store current address into a label
+{: label!	$ swap label_cell ! }
+
+\ Backward label address to stack (absolute)
+{: label	label_cell @ }
+
+{: branch_label_offset ( address -- offset/4)
+  $ -                           \ offset
+  2 rshift                      \ divided by 4
+}
+
+\ Emit a relative jump offset (backward).
+{: rlabel, ( address opcode offset_bit_size -- )
+  swap >r >r                    \ r: opcode, bit_size
+  branch_label_offset           \ offset
+  dup w,                        \ lower 16 bits
+  \ This also works on 16 bit hosts.
+  10 rshift                     \ offset's upper 16 bits
+  FFFF and                      \ because we don't have arshift
+  r> bit_size_to_mask dup >r    \ upper16, mask
+  invert FFFF and               \ limit mask to 16 bits
+  dup third and = drop \ fail if the lost part is not all 1's
+  r> and                        \ drop opcode bits from upper16
+  r> or w,                      \ write upper16 + opcode
+}
+
+\
+\ Forward labels
+\
+
+\ Register relative offset location
+{: rlabel_f, ( label opcode offset_bit_size -- )
+  >r >r
+  here swap label_cell !      \ place
+  r> r>
+  w,                          \ offset size
+  w,                          \ opcode
+}
+
+\ This handles >16 bit backward offsets on hosts with at least
+\ 32 bit cells, but it also doesn't fail on 16 bit hosts.
+{: validate_label_offset ( place -- offset )
+  dup                         \ place, place
+  w@ bit_size_to_mask invert  \ place, upper half mask
+  swap $ swap - 2 rshift      \ uhmask, offset/4
+  swap over                   \ offset/4, uhmask, offset/4
+  10 rshift and 0=            \ fail if offset is too large
+  drop
+}
+
+\ Fill in relative offset
+{: rlabel_f!
+  label dup                   \ place, place
+  validate_label_offset       \ place, offset
+  dup >r                      \ save offset
+  over w!                     \ write lower half
+  r>                          \ place, offset
+  swap 2 + swap               \ place+2, offset
+  over w@                     \ place+2, offset, opcode
+  swap                        \ place+2, opcode, offset
+  10 rshift or                \ place+2, upper half
+  swap w!                     \ write upper half
+}
+
+\ Register a 32 bit absolute forward location. Because we can
+\ only assume 16 bit words in our host, we write out the upper
+\ half of the 0x0001xxxx absolute base address, and store the
+\ location of the lower half to be emitted by our label_f!
+\ counterpart later.
+{: label_f,	here swap label_cell ! 0 w, 1 w, }
+
+\ Emit absolute forward label (only the lower 16 bits of it!)
+{: label_f!	label $ swap w! }
+
+\ multiply by 8
+{: 8*		3 lshift }
+
+\ registers
+\ X registers: 64 bits
+\ W registers: lower 32 bits of the X registers
+
+0 constant X0
+1 constant X1
+2 constant X2
+3 constant X3
+4 constant X4
+5 constant X5
+6 constant X6
+7 constant X7
+8 constant X8
+9 constant X9
+A constant X10
+B constant X11
+C constant X12
+D constant X13
+E constant X14
+F constant X15
+10 constant X16
+11 constant X17
+12 constant X18
+13 constant X19
+14 constant X20
+15 constant X21
+16 constant X22
+17 constant X23
+18 constant X24
+19 constant X25
+1A constant X26
+1B constant X27
+1C constant X28
+1D constant X29
+1E constant X30
+1F constant X31
+
+X29 constant FP    \ frame pointer
+X30 constant LR    \ link register
+X31 constant SP    \ stack pointer
+X31 constant XZR   \ always zero register in some opcodes
+
+{: NOP ( -- )
+  201F w,
+  D503 w,
+}
+
+\ MOV? Xd, #imm16
+\ |31 |30 29|28..23|22..21|20..5 |4..0|
+\ |sf |opc  |100101|hw    |imm16 |Rd  |
+\ opc:	MOVN	Move NOT (bitwise NOT of immediate)	00
+\	MOVZ	Move Zero (zero out other bits)		10
+\	MOVK	Move Keep (replace a 16-bit halfword)	11
+{: _MOV_r,u16,  ( reg u16 opc -- )
+  >r swap >r
+  dup                           \ u16 imm
+  5 lshift r> or w,             \ imm low part + reg
+  B rshift 9280 or              \ imm high part + opcode
+  r> or w,                      \ + mov variant selector
+}
+
+{: MOVZ_r,u16,  ( reg u16 -- )
+  4000 _MOV_r,u16,
+}
+
+{: MOVN_r,u16,  ( reg u16 -- )
+  0 _MOV_r,u16,
+}
+
+{: MOVK_r,u16,  ( reg u16 -- )
+  6000 _MOV_r,u16,
+}
+
+\ logical Xd, Xm, Xn (ORR, AND, EOR, ANDS)
+\ |31 |30 |29|28..24|23..22|21..16|15..10|9..5 |4..0|
+\ |sf |opc|N |01010 |shift |Rm   |imm6   |Rn   |Rd  |
+\ sf	31	1 = 64-bit (X), 0 = 32-bit (W)
+\ opc	30–29	01 = ORR, 00 = AND, 10 = EOR, 11 = ANDS
+\ N	28	0 for 64-bit logic
+\ 01010	27–23	fixed pattern
+\ shift	23–22	shift type (00=LSL, 01=LSR, 10=ASR, 11=ROR)
+\ Rm	20–16	second source register (src2)
+\ imm6	15–10	shift amount (0–63)
+\ Rn	9–5	first source register
+\ Rd	4–0	destination register
+\ TODO? it doesn't support shift with immediate
+{: _logical_r,r,r,  ( dst src src2 opcode -- )
+  >r swap >r                    \ dst src2 | src opcode
+  5 lshift or w,                \ src2 + dst reg
+  r> r> or                      \ src + opcode
+  8A00 or w,
+
+\ with 32 bit words
+\  swap
+\  AA0003E0 or
+\  swap 5 lshift or d,
+}
+
+\ MOV Xd, Xn (alias for ORR Xd, XZR, Xn)
+{: MOV_r,r,  ( dst src -- )
+  XZR 2000 _logical_r,r,r,
+}
+
+\ ADD/SUB Xd, Xn, u12
+\ 31 | 30 | 29| 28..24 | 23..22 | 21..10 | 9..5 | 4..0
+\ sf | op | S | 10001  | sh     | imm12  | Rn   | Rd
+\ sf (bit 31): 0 = 32-bit op, 1 = 64-bit op
+\ op (bit 30): 0 = ADD, 1 = SUB
+\ S (bit 29): 0 = normal, 1 = set flags (ADDS/SUBS)
+\ 10001 (bits 28..24): fixed pattern
+\ sh (bits 23..22): shift amount (0 = no shift, 1 = LSL12)
+\ imm12 (bits 21..10): 12-bit unsigned immediate
+\ Rn (bits 9..5): source register
+\ Rd (bits 4..0): destination register
+{: _add_sub_r,r,u12 ( dst src u12 opcode -- )
+  >r dup >r >r             \ u12 u12 opcode
+  5 lshift or              \ dst + src
+  r>                       \ u12
+  10 lshift or w,          \ + u12 low
+  r> 6 rshift r> or w,     \ u12 high + opcode
+}
+
+\ ADD/SUB Xd, Xn, Xm
+\ 31|30|29|28..24|23..22|21..16|15..10|9..5|4..0
+\ sf|op|S |      |shift |  Rm  | imm6 | Rn | Rd
+\ sf	31	0 = W (32-bit), 1 = X (64-bit)
+\ op	30	0 = ADD, 1 = SUB
+\ S	29	0 = normal, 1 = update flags (ADDS/SUBS)
+\ 	28–24	fixed pattern for add/sub register
+\ shift	23–22	00 = LSL (only allowed shift for ADD/SUB)
+\ Rm	21–16	second source register (subtrahend)
+\ imm6	15–10	shift amount (0–63 for X, 0–31 for W)
+\ Rn	9–5	first source register (minuend)
+\ Rd	4–0	destination register
+{: _add_sub_r,r,r, ( dst src src2 u6 opcode -- )
+  >r swap >r >r            \ u6 src2 opcode
+  5 lshift or              \ dst + src
+  r> A lshift or w,        \ + u6
+  r> r> or w,              \ src2 + opcode
+}
+
+{: ADDS_r,r   ( dst src -- ) 0   9100 _add_sub_r,r,u12 }
+{: ADDS_r,u12 ( dst u12 -- ) dup 9100 _add_sub_r,r,u12 }
+
+{: SUBS_r,r   ( dst src -- ) 0   D100 _add_sub_r,r,u12 }
+{: SUBS_r,u12 ( dst u12 -- ) dup D100 _add_sub_r,r,u12 }
+
+{: ADDS_r,r,r ( dst src src2 -- ) 0   AB00 _add_sub_r,r,r, }
+{: SUBS_r,r,r ( dst src src2 -- ) 0   EB00 _add_sub_r,r,r, }
+
+\ CMP Xn, Xm  -> SUBS XZR, Xn, Xm
+{: CMP_r,r ( left right -- )
+  >r >r XZR r> r> SUBS_r,r,r
+}
+
+\ 31..26   25..0
+\ 000101   imm26
+{: B.   ( offset -- ) 1400 0A rlabel,   }
+{: B._f ( offset -- ) 1400 0A rlabel_f, }
+{: BL   ( offset -- ) 9400 0A rlabel,   }
+{: BL_f ( offset -- ) 9400 0A rlabel_f, }
+{: B.EQ ( offset -- ) 5400 0A rlabel,   }
+
+{: RET ( -- ) 03C0 w, D65F w, }
+
+create buf
+
+0 label!
+1 B._f
+NOP
+0 label B.
+NOP
+1 rlabel_f!
+
+3 BL_f
+
+X1 X2 CMP_r,r
+NOP
+3 rlabel_f!
+X10 X20 ADDS_r,r
+X29 X30 ADDS_r,r
+X2  42  ADDS_r,u12
+X28 X29 X30 ADDS_r,r,r
+NOP
+X10 X20 SUBS_r,r
+X29 X30 SUBS_r,r
+X2  42  SUBS_r,u12
+X28 X29 X30 SUBS_r,r,r
+NOP
+X1  X2  MOV_r,r,
+X11 X22 MOV_r,r,
+X29 X30 MOV_r,r,
+NOP
+X2 FF22 MOVZ_r,u16,
+X3 FF23 MOVN_r,u16,
+X4 FF24 MOVK_r,u16,
+
+buf dump
+bye
