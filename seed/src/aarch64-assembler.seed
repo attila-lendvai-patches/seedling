@@ -126,24 +126,33 @@ create labels
 \ Backward label address to stack (absolute)
 {: label	label_cell @ }
 
-{: branch_label_offset ( address -- offset/4)
+\ Converts the address to a relative backward offset, divided by
+\ 4 as expected by the ISA. Then shifts the offset into position
+\ for the instruction, i.e. lshifts with low_bits bits, and
+\ clears out high_bits number of bits from the left. Fails if
+\ out of range.
+{: label_offset ( addr high_bits low_bits -- off off)
+  swap >r >r                    \ r: high_bits low_bits
   $ -                           \ offset
   2 rshift                      \ divided by 4
+  r> lshift                     \ left by low_bits
+  dup                           \ ds: offset, offset
+  10 rshift                     \ ds: offset, offset_high16
+  10 r> -                       \ 16 - high_bits
+  bit_size_to_mask dup >r       \ mask; saved, too
+  invert FFFF and               \ limit mask to 16 bits
+                                \ ds: offset, o_high16, mask
+  dup third and = drop \ fail if the lost part is not all 1's
+  r> and                        \ drop opcode bits from upper16
+  swap
+  \ ds: offset_high16, offset (full size, but fine for w, )
 }
 
 \ Emit a relative jump offset (backward).
-{: rlabel, ( address opcode offset_bit_size -- )
-  swap >r >r                    \ r: opcode, bit_size
-  branch_label_offset           \ offset
-  dup w,                        \ lower 16 bits
-  \ This also works on 16 bit hosts.
-  10 rshift                     \ offset's upper 16 bits
-  FFFF and                      \ because we don't have arshift
-  r> bit_size_to_mask dup >r    \ upper16, mask
-  invert FFFF and               \ limit mask to 16 bits
-  dup third and = drop \ fail if the lost part is not all 1's
-  r> and                        \ drop opcode bits from upper16
-  r> or w,                      \ write upper16 + opcode
+{: rlabel, ( offset_high16 offset high_opcode low_opcode -- )
+  swap >r                       \ save high_opcode
+  or w,                         \ write low
+  r> or w,                      \ write high
 }
 
 \
@@ -161,7 +170,7 @@ create labels
 
 \ This handles >16 bit backward offsets on hosts with at least
 \ 32 bit cells, but it also doesn't fail on 16 bit hosts.
-{: validate_label_offset ( place -- offset )
+{: label_offset_f ( place -- offset )
   dup                         \ place, place
   w@ bit_size_to_mask invert  \ place, upper half mask
   swap $ swap - 2 rshift      \ uhmask, offset/4
@@ -173,7 +182,7 @@ create labels
 \ Fill in relative offset
 {: rlabel_f!
   label dup                   \ place, place
-  validate_label_offset       \ place, offset
+  label_offset_f              \ place, offset
   dup >r                      \ save offset
   over w!                     \ write lower half
   r>                          \ place, offset
@@ -354,11 +363,41 @@ X31 constant XZR   \ always zero register in some opcodes
 
 \ 31..26   25..0
 \ 000101   imm26
-{: B.   ( offset -- ) 1400 0A rlabel,   }
-{: B._f ( offset -- ) 1400 0A rlabel_f, }
-{: BL   ( offset -- ) 9400 0A rlabel,   }
-{: BL_f ( offset -- ) 9400 0A rlabel_f, }
-{: B.EQ ( offset -- ) 5400 0A rlabel,   }
+{: B.   ( addr  -- ) 6 0 label_offset 1400 0 rlabel, }
+{: BL   ( addr  -- ) 6 0 label_offset 9400 0 rlabel, }
+
+{: B._f ( label -- ) 1400 0A rlabel_f, }
+{: BL_f ( label -- ) 9400 0A rlabel_f, }
+
+\
+\ Conditional jumps
+\
+\ | Bits  | Field      | Description             |
+\ | ----- | ---------- | ----------------------- |
+\ | 31–24 | `01010100` | Opcode                  |
+\ | 23–5  | `imm19`    | Signed branch offset /4 |
+\ | 4     | 0          | Reserved / zero         |
+\ | 3–0   | `cond`     | Condition code (0–15)   |
+{: cond_instr
+  8 5 label_offset 5400
+}
+
+{: B.EQ ( addr -- ) cond_instr 0 rlabel, }
+{: B.NE ( addr -- ) cond_instr 1 rlabel, }
+{: B.HS ( addr -- ) cond_instr 2 rlabel, }
+{: B.LO ( addr -- ) cond_instr 3 rlabel, }
+{: B.MI ( addr -- ) cond_instr 4 rlabel, }
+{: B.PL ( addr -- ) cond_instr 5 rlabel, }
+{: B.VS ( addr -- ) cond_instr 6 rlabel, }
+{: B.VC ( addr -- ) cond_instr 7 rlabel, }
+{: B.HI ( addr -- ) cond_instr 8 rlabel, }
+{: B.LS ( addr -- ) cond_instr 9 rlabel, }
+{: B.GE ( addr -- ) cond_instr A rlabel, }
+{: B.LT ( addr -- ) cond_instr B rlabel, }
+{: B.GT ( addr -- ) cond_instr C rlabel, }
+{: B.LE ( addr -- ) cond_instr D rlabel, }
+{: B.AL ( addr -- ) cond_instr E rlabel, }
+{: B.NV ( addr -- ) cond_instr F rlabel, }
 
 {: RET ( -- ) 03C0 w, D65F w, }
 
@@ -370,6 +409,22 @@ NOP
 0 label B.
 NOP
 1 rlabel_f!
+0 label B.EQ
+0 label B.NE
+0 label B.HS
+0 label B.LO
+0 label B.MI
+0 label B.PL
+0 label B.VS
+0 label B.VC
+0 label B.HI
+0 label B.LS
+0 label B.GE
+0 label B.LT
+0 label B.GT
+0 label B.LE
+0 label B.AL
+0 label B.NV
 
 3 BL_f
 
