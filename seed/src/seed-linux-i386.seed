@@ -607,8 +607,8 @@ create ELF
 \ Signature
 7F c, ascii E c, ascii L c, ascii F c,
 
-\ Class 2, 64-bit
-2 c,
+\ Class 1, 32-bit
+1 c,
 
 \ Little-endian
 1 c,
@@ -625,38 +625,38 @@ create ELF
 \ Executable file type
 2 w,
 
-\ Target architecture x86_64
-3E w,
+\ Target architecture
+3 w,
 
 \ Additional ELF version
 1 d,
 
 f_EntryPoint field
 
-0 w, 1 w, 0 d,
+0 w, 1 w,
 
 f_ProgramHeaders field
 
-0 q,
+0 d,
 
 f_SectionHeaders field
 
-0 q,
+0 d,
 
 \ Unused flags
 0 d,
 
 \ Header size
-40 w,
+34 w,
 
 \ Program header entry size
-38 w,
+20 w,
 
 \ Number of program header entries
 1 w,
 
 \ Section header entry size
-40 w,
+28 w,
 
 \ Number of section header entries
 4 w,
@@ -671,35 +671,42 @@ $ f_ProgramHeaders @ w!
 \ Program header type: 1 = loadable segment
 1 d,
 
+\ Loadable segment offset in the file
+0 d,
+
+\ Virtual address 10000
+0 w, 1 w,
+
+\ Physical address ???
+0 w, 1 w,
+
+f_SizeInFile field
+0 d,
+
+\ Size in memory
+\ FIXME shouldn't this be the same value as the prefious entry?
+\ or just plain zero?
+0 w, 1 w,
+
 \ Program header flags: 7 = read + write + execute
 7 d,
 
-\ Loadable segment offset in the file
-0 q,
-
-\ Virtual address 10000
-0 w, 1 w, 0 d,
-
-\ Physical address ???
-0 w, 1 w, 0 d,
-
-f_SizeInFile field
-0 q,
-
-\ Size in memory
-0 w, 1 w, 0 d,
-
 \ Alignment
-8000 q,
+1000 d,
 
 \ Section Headers
 
 $ f_SectionHeaders @ w!
 
-\ null header
-' 0c, 40 times
+\
+\ a null header entry
+\
 
+' 0c, 28 times
+
+\
 \ .text segment
+\
 
 \ Offset of .text in the table
 1 d,
@@ -708,16 +715,16 @@ $ f_SectionHeaders @ w!
 1 d,
 
 \ Flags: 6 = allocated + executable
-6 q,
+6 d,
 
 \ Virtual address 10000
-0 w, 1 w, 0 d,
+0 w, 1 w,
 
 \ Offset in the file
-0 q,
+0 d,
 
 f_TotalFileSize field
-0 q,
+0 d,
 
 \ Linked section index
 0 d,
@@ -726,12 +733,14 @@ f_TotalFileSize field
 0 d,
 
 \ Alignment
-10 q,
+10 d,
 
 \ Section entry size
-0 q,
+0 d,
 
+\
 \ .bss segment
+\
 
 \ Offset of .bss in the table
 7 d,
@@ -740,16 +749,16 @@ f_TotalFileSize field
 8 d,
 
 \ Flags: writable, allocated, executable
-7 q,
+7 d,
 
 \ Virtual address
-8000 w, 1 w, 0 d,
+8000 w, 1 w,
 
 \ Offset in the file
-0 q,
+0 d,
 
 \ Section size
-8000 q,
+8000 d,
 
 \ Linked section index
 0 d,
@@ -758,33 +767,41 @@ f_TotalFileSize field
 0 d,
 
 \ Alignment
-10 q,
+10 d,
 
 \ Section entry size
-0 q,
+0 d,
 
 
-
+\
 \ String Table Section
+\
+
+\ Offset in the table
 C d,
 
 \ Type: string table
 3 d,
 
 \ No need to load it
-0 q,
+0 d,
 
+\ Virtual address in memory (if loaded).
 f_StringTableVA field
-0 w, 1 w, 0 d,
+0 w, 1 w,               \ shouldn't this be 0?
 
 f_StringTableOffset field
-0 q,
+0 d,
 
 \ Length
-16 q,
+16 d,
 
 \ Other stuff
-0 d, 0 d, 1 q, 0 q,
+0 d, 0 d, 1 d, 0 d,
+
+\
+\ Machine code begins, aka the ELF entry point
+\
 
 $ f_EntryPoint @ w!
 
