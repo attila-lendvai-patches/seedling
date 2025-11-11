@@ -159,38 +159,34 @@ create labels
 \ Forward labels
 \
 
-\ Register relative offset location
-{: rlabel_f, ( label opcode offset_bit_size -- )
-  >r >r
-  here swap label_cell !      \ place
-  r> r>
-  w,                          \ offset size
-  w,                          \ opcode
+\ Register relative offset location in the label until the
+\ future definition of the label.
+{: rlabel_f ( label -- )
+  here swap label_cell !
 }
 
-\ This handles >16 bit backward offsets on hosts with at least
-\ 32 bit cells, but it also doesn't fail on 16 bit hosts.
-{: label_offset_f ( place -- offset )
-  dup                         \ place, place
-  w@ bit_size_to_mask invert  \ place, upper half mask
-  swap $ swap - 2 rshift      \ uhmask, offset/4
-  swap over                   \ offset/4, uhmask, offset/4
-  10 rshift and 0=            \ fail if offset is too large
-  drop
+\ This properly handles >16 bit forward offsets on hosts with at
+\ least 32 bit cells, but it also doesn't fail on 16 bit hosts.
+{: label_offset_f ( place -- offset_high16 offset )
+  dup $ swap - 2 rshift       \ ds: place, place, offset/4
+  swap c@ dup >r              \ ds: offset, bit_spec
+  0F and lshift               \ ds: offset (shifted left)
+  r> 4 rshift                 \ high bits to drop
+  bit_size_to_mask invert     \ ds: offset, upper mask
+  over and 0= drop            \ fail if offset is too large
+                              \ ds: offset
+  dup 10 rshift               \ ds: offset, offset_high16
+  swap
 }
 
 \ Fill in relative offset
 {: rlabel_f!
-  label dup                   \ place, place
-  label_offset_f              \ place, offset
-  dup >r                      \ save offset
-  over w!                     \ write lower half
-  r>                          \ place, offset
-  swap 2 + swap               \ place+2, offset
-  over w@                     \ place+2, offset, opcode
-  swap                        \ place+2, opcode, offset
-  10 rshift or                \ place+2, upper half
-  swap w!                     \ write upper half
+  label                       \ ds: place
+  dup 2 + w@ >r               \ high_opcode
+  dup 1 + c@ >r               \ low_opcode
+  dup label_offset_f          \ place, offset_high16, offset
+  r> or third w!              \ place, offset_high16
+  r> or swap 2 + w!
 }
 
 \ Register a 32 bit absolute forward location. Because we can
@@ -361,16 +357,21 @@ X31 constant XZR   \ always zero register in some opcodes
   >r >r XZR r> r> SUBS_r,r,r
 }
 
-\ 31..26   25..0
-\ 000101   imm26
+{: RET ( -- ) 03C0 w, D65F w, }
+
+\
+\ Jumps backward
+\
+
+\ | Bits  | Field    | Description                |
+\ | ----- | -------- | -------------------------- |
+\ | 31–26 | `000101` | Opcode for `B`             |
+\ | 25–0  | `imm26`  | Signed immediate offset /4 |
 {: B.   ( addr  -- ) 6 0 label_offset 1400 0 rlabel, }
 {: BL   ( addr  -- ) 6 0 label_offset 9400 0 rlabel, }
 
-{: B._f ( label -- ) 1400 0A rlabel_f, }
-{: BL_f ( label -- ) 9400 0A rlabel_f, }
-
 \
-\ Conditional jumps
+\ Conditional jumps backward
 \
 \ | Bits  | Field      | Description             |
 \ | ----- | ---------- | ----------------------- |
@@ -378,37 +379,68 @@ X31 constant XZR   \ always zero register in some opcodes
 \ | 23–5  | `imm19`    | Signed branch offset /4 |
 \ | 4     | 0          | Reserved / zero         |
 \ | 3–0   | `cond`     | Condition code (0–15)   |
-{: cond_instr
+{: cond_jump_instr
   8 5 label_offset 5400
 }
 
-{: B.EQ ( addr -- ) cond_instr 0 rlabel, }
-{: B.NE ( addr -- ) cond_instr 1 rlabel, }
-{: B.HS ( addr -- ) cond_instr 2 rlabel, }
-{: B.LO ( addr -- ) cond_instr 3 rlabel, }
-{: B.MI ( addr -- ) cond_instr 4 rlabel, }
-{: B.PL ( addr -- ) cond_instr 5 rlabel, }
-{: B.VS ( addr -- ) cond_instr 6 rlabel, }
-{: B.VC ( addr -- ) cond_instr 7 rlabel, }
-{: B.HI ( addr -- ) cond_instr 8 rlabel, }
-{: B.LS ( addr -- ) cond_instr 9 rlabel, }
-{: B.GE ( addr -- ) cond_instr A rlabel, }
-{: B.LT ( addr -- ) cond_instr B rlabel, }
-{: B.GT ( addr -- ) cond_instr C rlabel, }
-{: B.LE ( addr -- ) cond_instr D rlabel, }
-{: B.AL ( addr -- ) cond_instr E rlabel, }
-{: B.NV ( addr -- ) cond_instr F rlabel, }
+{: B.EQ ( addr -- ) cond_jump_instr 0 rlabel, }
+{: B.NE ( addr -- ) cond_jump_instr 1 rlabel, }
+{: B.HS ( addr -- ) cond_jump_instr 2 rlabel, }
+{: B.LO ( addr -- ) cond_jump_instr 3 rlabel, }
+{: B.MI ( addr -- ) cond_jump_instr 4 rlabel, }
+{: B.PL ( addr -- ) cond_jump_instr 5 rlabel, }
+{: B.VS ( addr -- ) cond_jump_instr 6 rlabel, }
+{: B.VC ( addr -- ) cond_jump_instr 7 rlabel, }
+{: B.HI ( addr -- ) cond_jump_instr 8 rlabel, }
+{: B.LS ( addr -- ) cond_jump_instr 9 rlabel, }
+{: B.GE ( addr -- ) cond_jump_instr A rlabel, }
+{: B.LT ( addr -- ) cond_jump_instr B rlabel, }
+{: B.GT ( addr -- ) cond_jump_instr C rlabel, }
+{: B.LE ( addr -- ) cond_jump_instr D rlabel, }
+{: B.AL ( addr -- ) cond_jump_instr E rlabel, }
+{: B.NV ( addr -- ) cond_jump_instr F rlabel, }
 
-{: RET ( -- ) 03C0 w, D65F w, }
+\
+\ Jumps to forward labels
+\
+
+{: B._f   ( label -- ) rlabel_f A0 c, 0 c, 1400 w, }
+{: BL_f   ( label -- ) rlabel_f A0 c, 0 c, 9400 w, }
+
+\ high_low_bits is: left bits to drop + bits to shift left
+{: cond_jump_instr_f, ( high_low_bits low_opcode -- )
+  A5 c, c, 5400 w,
+}
+
+{: B.EQ_f ( label -- ) rlabel_f 0 cond_jump_instr_f, }
+{: B.NE_f ( label -- ) rlabel_f 1 cond_jump_instr_f, }
+{: B.HS_f ( label -- ) rlabel_f 2 cond_jump_instr_f, }
+{: B.LO_f ( label -- ) rlabel_f 3 cond_jump_instr_f, }
+{: B.MI_f ( label -- ) rlabel_f 4 cond_jump_instr_f, }
+{: B.PL_f ( label -- ) rlabel_f 5 cond_jump_instr_f, }
+{: B.VS_f ( label -- ) rlabel_f 6 cond_jump_instr_f, }
+{: B.VC_f ( label -- ) rlabel_f 7 cond_jump_instr_f, }
+{: B.HI_f ( label -- ) rlabel_f 8 cond_jump_instr_f, }
+{: B.LS_f ( label -- ) rlabel_f 9 cond_jump_instr_f, }
+{: B.GE_f ( label -- ) rlabel_f A cond_jump_instr_f, }
+{: B.LT_f ( label -- ) rlabel_f B cond_jump_instr_f, }
+{: B.GT_f ( label -- ) rlabel_f C cond_jump_instr_f, }
+{: B.LE_f ( label -- ) rlabel_f D cond_jump_instr_f, }
+{: B.AL_f ( label -- ) rlabel_f E cond_jump_instr_f, }
+{: B.NV_f ( label -- ) rlabel_f F cond_jump_instr_f, }
 
 create buf
 
 0 label!
-1 B._f
+
+1 B.EQ_f
+2 B._f
+3 BL_f
+4 B.NE_f
+
 NOP
 0 label B.
 NOP
-1 rlabel_f!
 0 label B.EQ
 0 label B.NE
 0 label B.HS
@@ -426,28 +458,29 @@ NOP
 0 label B.AL
 0 label B.NV
 
-3 BL_f
-
 X1 X2 CMP_r,r
 NOP
+1 rlabel_f!
+2 rlabel_f!
 3 rlabel_f!
-X10 X20 ADDS_r,r
-X29 X30 ADDS_r,r
-X2  42  ADDS_r,u12
-X28 X29 X30 ADDS_r,r,r
-NOP
-X10 X20 SUBS_r,r
-X29 X30 SUBS_r,r
-X2  42  SUBS_r,u12
-X28 X29 X30 SUBS_r,r,r
-NOP
-X1  X2  MOV_r,r,
-X11 X22 MOV_r,r,
-X29 X30 MOV_r,r,
-NOP
-X2 FF22 MOVZ_r,u16,
-X3 FF23 MOVN_r,u16,
-X4 FF24 MOVK_r,u16,
+4 rlabel_f!
+\ X10 X20 ADDS_r,r
+\ X29 X30 ADDS_r,r
+\ X2  42  ADDS_r,u12
+\ X28 X29 X30 ADDS_r,r,r
+\ NOP
+\ X10 X20 SUBS_r,r
+\ X29 X30 SUBS_r,r
+\ X2  42  SUBS_r,u12
+\ X28 X29 X30 SUBS_r,r,r
+\ NOP
+\ X1  X2  MOV_r,r,
+\ X11 X22 MOV_r,r,
+\ X29 X30 MOV_r,r,
+\ NOP
+\ X2 FF22 MOVZ_r,u16,
+\ X3 FF23 MOVN_r,u16,
+\ X4 FF24 MOVK_r,u16,
 
 buf dump
 bye
