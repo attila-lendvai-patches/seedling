@@ -268,17 +268,17 @@ rax swap mov_rr,x
 
 \ assembler macros
 
-40 constant xcell_bits		\ 64 bits
-3  constant xcelllog		\ for shifts
+20 constant xcell_bits		\ 32 bits
+2  constant xcelllog		\ for shifts
 xcell_bits 3 rshift
    constant xcell		\ byte size of the target's word
 xcell 1 -
-   constant xcell1-		\ 7
+   constant xcell1-		\ 3
 xcell1- invert 1+
-   constant xcell_mask          \ FFF8
+   constant xcell_mask          \ FFFC
 
 {: xcells
-  xcelllog lshift		\ 8 *
+  xcelllog lshift		\ 4 *
 }
 
 {: xalign
@@ -330,11 +330,11 @@ xcell+
 }
 
 {: xsearch ( a -( pad fail )- a )
-xtraverse& 10 +
+xtraverse& 8 +
 pad s= cut }~ nip
 
 {: xfind ( -( pad fail )- a )
-xcurrent xsearch 10 }~ -
+xcurrent xsearch 8 }~ -
 
 \ target tick
 {: x'
