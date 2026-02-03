@@ -1,13 +1,13 @@
 output \ this must be on the first line
 
-\ This is the Sprout source for amd64 Linux
+\ This is the Sprout source for i386 Linux
 
 \ Requirements
 \ It can be compiled by any Seed that has at least 16 bit
 \ cells and about 20 kilobytes of free RAM space available.
 
 \ Assembler
-\ This implements a very limited subset of the amd64
+\ This implements a very limited subset of the i386
 \ assembly language and is only suited for compiling
 \ code that lives in the virtual address range between
 \ 10000 and 17FFF inclusive.
@@ -16,10 +16,10 @@ output \ this must be on the first line
 \ TOS: top of stack
 
 \ Imlementation
-\ RAX holds TOS, the top element of the data stack
-\ RBX points to the data stack (but top element is in RAX)
-\ RCX is a scratch register
-\ RSP is the call stack
+\ EAX holds TOS, the top element of the data stack
+\ EBX points to the data stack (but top element is in EAX)
+\ ECX is a scratch register
+\ ESP is the call stack
 
 hex
 
@@ -44,11 +44,11 @@ hex
 \ 32-bit little-endian comma
 {: d,		{ lsb c, } 3 times c, }
 
-\ 64-bit little-endian comma
+\ 8-byte little-endian comma
 {: q,		{ lsb c, } 7 times c, }
 
-\ 64-bit virtual address comma
-{: a,		w, 1 w, 0 d, }
+\ 32-bit virtual address comma
+{: a,		w, 1 w, }
 
 \ 16-bit little-endian fetch
 {: w@		dup c@ swap 1+ c@ 8 lshift or }
@@ -193,48 +193,47 @@ create labels
 {: maybe_rs 2 select_rel_emitter }
 
 \ registers
-0 constant rax
-1 constant rcx
-2 constant rdx
-3 constant rbx
-4 constant rsp
-5 constant rbp
-6 constant rsi
-7 constant rdi
+0 constant eax
+1 constant ecx
+2 constant edx
+3 constant ebx
+4 constant esp
+5 constant ebp
+6 constant esi
+7 constant edi
 
 \ Opcodes
 
 {: mov_rr,x		swap B8 + c, d, }
 {: mov_rr,aa		swap B8 + c, w, 1 w, }
-{: mov_rr,xx		swap 48 c, B8 + c, q, }
-{: mov_rr,rr		48 c, 89 c, 8* + C0 or c, }
+{: mov_rr,rr		89 c, 8* + C0 or c, }
 {: mov_rl,rl		88 c, 8* + C0 or c, }
 {: mov_er,er		89 c, 8* + C0 or c, }
 {: mov_byte_[rr],x      C6 c, swap c, c, }
-{: mov_[rr],rr		48 c, 89 c, 8* + c, }
+{: mov_[rr],rr		89 c, 8* + c, }
 {: mov_[rr],er		89 c, 8* + c, }
 {: mov_er,[rr]		8B c, swap 8* + c, }
 {: mov_[rr],rl		88 c, 8* + c, }
 {: mov_rl,[rr]		8A c, swap 8* + c, }
-{: mov_rr,[rr]		48 c, 8B c, swap 8* + c, }
-{: mov_[aa],rr		48 c, 89 c, 8* 4 + c, 25 c, w, 1 w, }
+{: mov_rr,[rr]		8B c, swap 8* + c, }
+{: mov_[aa],rr		89 c, 8* 4 + c, 25 c, w, 1 w, }
 {: mov_[aa],rl		88 c, 8* 4 + c, 25 c, w, 1 w, }
 {: mov_rl,[aa]		8A c, swap 8* 4 + c, 25 c, w, 1 w, }
-{: mov_rr,[aa]		48 c, 8B c, swap 8* 4 + c, 25 c, w, 1 w, }
-{: op_syscall		50F w, }
-{: add_rr,rr		48 c, 01 c, 8* + C0 or c, }
-{: add_rr,s		48 c, 83 c, swap C0 + c, c, }
-{: add_rr,[aa]		48 c, 03 c, swap 8* 4 + c, 25 c, w, 1 w, }
-{: sub_rr,s		48 c, 83 c, swap E8 + c, c, }
-{: sub_rr,rr		48 c, 29 c, 8* + C0 or c, }
-{: sbb_rr,rr		48 c, 19 c, 8* + C0 or c, }
-{: cmp_rr,s		48 c, 83 c, swap F8 + c, c, }
-{: cmp_rr,rr		48 c, 39 c, 8* + C0 or c, }
-{: cmp_rr,[rr]		48 c, 3B c, swap 8* + c, }
+{: mov_rr,[aa]		8B c, swap 8* 4 + c, 25 c, w, 1 w, }
+{: int_x		CD c, c, }
+{: add_rr,rr		01 c, 8* + C0 or c, }
+{: add_rr,s		83 c, swap C0 + c, c, }
+{: add_rr,[aa]		03 c, swap 8* 4 + c, 25 c, w, 1 w, }
+{: sub_rr,s		83 c, swap E8 + c, c, }
+{: sub_rr,rr		29 c, 8* + C0 or c, }
+{: sbb_rr,rr		19 c, 8* + C0 or c, }
+{: cmp_rr,s		83 c, swap F8 + c, c, }
+{: cmp_rr,rr		39 c, 8* + C0 or c, }
+{: cmp_rr,[rr]		3B c, swap 8* + c, }
 {: cmp_rl,[rr]		3A c, swap 8* + c, }
-{: and_rr,rr		48 c, 21 c, 8* + C0 or c, }
-{: or_rr,rr		48 c, 09 c, 8* + C0 or c, }
-{: xor_rr,rr		48 c, 31 c, 8* + C0 or c, }
+{: and_rr,rr		21 c, 8* + C0 or c, }
+{: or_rr,rr		09 c, 8* + C0 or c, }
+{: xor_rr,rr		31 c, 8* + C0 or c, }
 {: call			E8 c, rlabel, }
 {: call_f		E8 c, rlabel_f, }
 {: call_rr		FF c, D0 or c, }
@@ -291,33 +290,33 @@ create labels
 {: ret			C3 c, }
 {: push			50 + c, }
 {: pop			58 + c, }
-{: inc_rr		48 c, FF c, C0 or c, }
-{: dec_rr		48 c, FF c, C8 or c, }
+{: inc_rr		FF c, C0 or c, }
+{: dec_rr		FF c, C8 or c, }
 {: clc			F8 c, }
 {: stc			F9 c, }
 {: cld			FC c, }
 {: std			FD c, }
-{: shl_rr,s		48 c, C1 c, swap E0 or c, c, }
-{: shr_rr,s		48 c, C1 c, swap E8 or c, c, }
-{: shl_rr,cl		48 c, D3 c, E0 or c, }
-{: shr_rr,cl		48 c, D3 c, E8 or c, }
-{: sar_rr,cl		48 c, D3 c, F8 or c, }
-{: rcr_rr,1		48 c, D1 c, D8 or c, }
-{: rep_movsq		F3 c, 48 c, A5 c, }
+{: shl_rr,s		C1 c, swap E0 or c, c, }
+{: shr_rr,s		C1 c, swap E8 or c, c, }
+{: shl_rr,cl		D3 c, E0 or c, }
+{: shr_rr,cl		D3 c, E8 or c, }
+{: sar_rr,cl		D3 c, F8 or c, }
+{: rcr_rr,1		D1 c, D8 or c, }
+{: rep_movsq		F3 c, A5 c, }
 {: rep_movsb		F3 c, A4 c, }
 {: cmpsb		A6 c, }
-{: mul_rr		48 c, F7 c, E0 or c, }
-{: div_rr		48 c, F7 c, F0 or c, }
-{: idiv_rr		48 c, F7 c, F8 or c, }
-{: not_rr		48 c, F7 c, D0 or c, }
-{: neg_rr		48 c, F7 c, D8 or c, }
+{: mul_rr		F7 c, E0 or c, }
+{: div_rr		F7 c, F0 or c, }
+{: idiv_rr		F7 c, F8 or c, }
+{: not_rr		F7 c, D0 or c, }
+{: neg_rr		F7 c, D8 or c, }
 {: finit		9B c, DB c, E3 c, }
 {: fldcw_[rr]		D9 c, 28 or c, }
-{: fild_[rr]		DF c, 28 or c, }
-{: fistp_[rr]		DF c, 38 or c, }
-{: fisttp_[rr]		DD c, 08 or c, }
-{: fld_[rr]		DD c, c, }
-{: fstp_[rr]		DD c, 18 or c, }
+{: fild_[rr]		DB c, c, }
+{: fistp_[rr]		DB c, 18 or c, }
+{: fisttp_[rr]		DB c, 08 or c, }
+{: fld_[rr]		D9 c, c, }
+{: fstp_[rr]		D9 c, 18 or c, }
 {: fstp_st1		DD c, D9 c, }
 {: faddp		DE c, C1 c, }
 {: fsubp		DE c, E9 c, }
@@ -343,21 +342,24 @@ create labels
 
 \ syscall
 
-0  constant sys.read
-1  constant sys.write
-2  constant sys.open
-3  constant sys.close
-A  constant sys.mprotect
-C  constant sys.brk
-38 constant sys.clone
-39 constant sys.fork
-3A constant sys.vfork
-3B constant sys.execve
-3C constant sys.exit
+3  constant sys.read
+4  constant sys.write
+5  constant sys.open
+6  constant sys.close
+7D constant sys.mprotect
+2D constant sys.brk
+78 constant sys.clone
+2  constant sys.fork
+BE constant sys.vfork
+B  constant sys.execve
+1  constant sys.exit
 
 {: syscall ( n -- )
-rax swap mov_rr,x
-op_syscall
+ebx push
+ebx edi mov_rr,rr
+eax swap mov_rr,x
+  80 int_x
+ebx pop
 }
 
 \ Cross Compilation
@@ -371,14 +373,14 @@ op_syscall
 
 \ assembler macros
 
-40 constant xcell_bits		\ 64 bits
-3  constant xcelllog		\ for shifts
-xcell_bits xcelllog rshift
+20 constant xcell_bits		\ 32 bits
+2  constant xcelllog		\ for shifts
+xcell_bits 3 rshift
    constant xcell		\ byte size of the target's word
 xcell 1 -
-   constant xcell1-		\ 0007
+   constant xcell1-		\ 3
 xcell1- invert 1+
-   constant xcell_mask          \ FFF8
+   constant xcell_mask          \ FFFC
 
 {: xcells
   xcelllog lshift		\ 8 *
@@ -392,40 +394,40 @@ xcell1- invert 1+
   xcell +
 }
 
-{: tos_load               \ top of data stack -> rax
-rbx xcell sub_rr,s
-rax rbx mov_rr,[rr]
+{: tos_load               \ top of data stack -> eax
+ebx xcell sub_rr,s
+eax ebx mov_rr,[rr]
 }
 
-{: tos_store              \ rax -> data stack
-rbx rax mov_[rr],rr
-rbx xcell add_rr,s
+{: tos_store              \ eax -> data stack
+ebx eax mov_[rr],rr
+ebx xcell add_rr,s
 }
 
 {: binary
-rcx rax mov_rr,rr
+ecx eax mov_rr,rr
 tos_load
 }
 
 {: binary_cmp
 binary
-rax rcx cmp_rr,rr
+eax ecx cmp_rr,rr
 }
 
 {: unary_fp
-rbx rax mov_[rr],rr
-rbx fld_[rr]
+ebx eax mov_[rr],rr
+ebx fld_[rr]
 }
 
 {: binary_fp
 unary_fp
-rbx xcell sub_rr,s
-rbx fld_[rr]
+ebx xcell sub_rr,s
+ebx fld_[rr]
 }
 
 {: value_fp
-rbx fstp_[rr]
-rax rbx mov_rr,[rr]
+ebx fstp_[rr]
+eax ebx mov_rr,[rr]
 }
 
 {: binary_fcmp
@@ -449,7 +451,7 @@ create xcurrent 0 w,
 {: xlink ( a -- a )
 xcell align
 { 0<> $ swap }~ a,
-{ $ swap }~ q,
+{ $ swap }~ d,
 }~|
 
 {: xlast ( -- a )
@@ -464,11 +466,11 @@ xcell+
 }
 
 {: xsearch ( a -( pad fail )- a )
-xtraverse& 10 +
+xtraverse& 8 +
 pad s= cut }~ nip
 
 {: xfind ( -( pad fail )- a )
-xcurrent xsearch 10 }~ -
+xcurrent xsearch 8 }~ -
 
 {: undef ( -( pad emit )- )
 pad s. "  undefined" s. cr }~ bye
@@ -511,13 +513,13 @@ $ swap w!
 \ target literal
 {: xliteral ( x -( heap )- )
 tos_store
-rax swap mov_rr,xx
+eax swap mov_rr,x
 }
 
 \ target address literal
 {: xaliteral ( a -( heap )- )
 tos_store
-rax swap mov_rr,aa
+eax swap mov_rr,aa
 }
 
 {: x{{ ( -( heap )- a )
@@ -527,7 +529,7 @@ E8 c, 0 d, \ call forward
 {: x}} ( a -( heap )- )
 dup here swap - swap 4 - w!
 tos_store
-rax pop
+eax pop
 }
 
 \ create association
@@ -686,7 +688,7 @@ jmp_[aa]
 {: exception
 native
 effects @ dup xcell+ effects !
-rcx swap mov_rr,aa
+ecx swap mov_rr,aa
 catch @ jmp
 }
 
@@ -694,7 +696,7 @@ catch @ jmp
 {: constant
 native
 tos_store
-rax swap mov_rr,x
+eax swap mov_rr,x
 ret
 }
 
@@ -702,14 +704,14 @@ ret
 {: address
 native
 tos_store
-rax swap mov_rr,aa
+eax swap mov_rr,aa
 ret
 }
 
 \ change compile mode behavior
 {: does
 xlast
-10 +
+8 +
 offset @ +
 w! }
 
@@ -763,8 +765,8 @@ create ELF
 \ Signature
 7F c, ascii E c, ascii L c, ascii F c,
 
-\ Class 2, 64-bit
-2 c,
+\ Class 1, 32-bit
+1 c,
 
 \ Little-endian
 1 c,
@@ -778,84 +780,92 @@ create ELF
 \ Extended ABI
 0 q,
 
-\ Executable file type
+\ e_type: ET_EXEC = 2
 2 w,
 
-\ Target architecture x86_64
-3E w,
-
-\ Additional ELF version
-1 d,
-
-f_EntryPoint field
-
-0 w, 1 w, 0 d,
-
-f_ProgramHeaders field
-
-0 q,
-
-f_SectionHeaders field
-
-0 q,
-
-\ Unused flags
-0 d,
-
-\ Header size
-40 w,
-
-\ Program header entry size
-38 w,
-
-\ Number of program header entries
-1 w,
-
-\ Section header entry size
-40 w,
-
-\ Number of section header entries
-4 w,
-
-\ Index of string table section
+\ e_machine: EM_386 = 3
 3 w,
 
+\ e_version
+1 d,
+
+\ e_entry
+f_EntryPoint field
+0 w, 1 w,
+
+\ e_phoff
+f_ProgramHeaders field
+0 d,
+
+\ e_shoff: file offset of the section headers
+f_SectionHeaders field
+0 d,
+
+\ e_flags
+0 d,
+
+\ e_ehsize
+34 w,
+
+\ e_phentsize
+20 w,
+
+\ e_phnum
+1 w,
+
+\ e_shentsize
+28 w,
+
+\ e_shnum
+4 w,
+
+\ e_shstrndx
+3 w,
+
+\
 \ Program Headers
+\
 
 $ f_ProgramHeaders @ w!
 
-\ Program header type: 1 = loadable segment
+\ p_type: PT_LOAD = 1
 1 d,
 
-\ Program header flags: 7 = read + write + execute
+\ p_offset
+0 d,
+
+\ p_vaddr: 10000
+0 w, 1 w,
+
+\ p_paddr
+0 w, 1 w,
+
+\ p_filesz
+f_SizeInFile field
+0 d,
+
+\ p_memsz
+0 w, 1 w,
+
+\ p_flags: 7 = read + write + execute
 7 d,
 
-\ Loadable segment offset in the file
-0 q,
-
-\ Virtual address 10000
-0 w, 1 w, 0 d,
-
-\ Physical address ???
-0 w, 1 w, 0 d,
-
-f_SizeInFile field
-0 q,
-
-\ Size in memory
-0 w, 1 w, 0 d,
-
-\ Alignment
-8000 q,
+\ p_align
+1000 d,
 
 \ Section Headers
 
 $ f_SectionHeaders @ w!
 
-\ null header
-' 0c, 40 times
+\
+\ a null header entry
+\
 
+' 0c, 28 times
+
+\
 \ .text segment
+\
 
 \ Offset of .text in the table
 1 d,
@@ -864,16 +874,16 @@ $ f_SectionHeaders @ w!
 1 d,
 
 \ Flags: 6 = allocated + executable
-6 q,
+6 d,
 
 \ Virtual address 10000
-0 w, 1 w, 0 d,
+0 w, 1 w,
 
 \ Offset in the file
-0 q,
+0 d,
 
 f_TotalFileSize field
-0 q,
+0 d,
 
 \ Linked section index
 0 d,
@@ -882,12 +892,14 @@ f_TotalFileSize field
 0 d,
 
 \ Alignment
-10 q,
+10 d,
 
 \ Section entry size
-0 q,
+0 d,
 
+\
 \ .bss segment
+\
 
 \ Offset of .bss in the table
 7 d,
@@ -896,16 +908,16 @@ f_TotalFileSize field
 8 d,
 
 \ Flags: writable, allocated, executable
-7 q,
+7 d,
 
 \ Virtual address
-8000 w, 1 w, 0 d,
+8000 w, 1 w,
 
 \ Offset in the file
-0 q,
+0 d,
 
 \ Section size
-8000 q,
+8000 d,
 
 \ Linked section index
 0 d,
@@ -914,33 +926,40 @@ f_TotalFileSize field
 0 d,
 
 \ Alignment
-10 q,
+10 d,
 
 \ Section entry size
-0 q,
+0 d,
 
 
-
+\
 \ String Table Section
+\
+
+\ Offset in the table
 C d,
 
 \ Type: string table
 3 d,
 
 \ No need to load it
-0 q,
+0 d,
 
+\ Virtual address in memory (if loaded).
 f_StringTableVA field
-0 w, 1 w, 0 d,
+0 w, 1 w,               \ shouldn't this be 0?
 
 f_StringTableOffset field
-0 q,
+0 d,
 
 \ Length
-16 q,
+16 d,
 
 \ Other stuff
-0 d, 0 d, 1 q, 0 q,
+0 d, 0 d, 1 d, 0 d,
+\
+\ Emit the machine code
+\
 
 $ f_EntryPoint @ w!
 
@@ -950,49 +969,49 @@ $ f_EntryPoint @ w!
 sys.brk syscall
 ret
 
-1 label! \ low-level heap allocation of rcx bytes
-rax push
-rcx push
-rdi 0 mov_rr,x
+1 label! \ low-level heap allocation of ecx bytes
+eax push
+ecx push
+edi 0 mov_rr,x
 0 label call
-rcx pop
-rcx DP add_rr,[aa]
-rax rcx cmp_rr,rr
+ecx pop
+ecx DP add_rr,[aa]
+eax ecx cmp_rr,rr
 2 jnc_fs
-rdi rcx mov_rr,rr
+edi ecx mov_rr,rr
 0 label call
-rdi DICTIONARY mov_rr,[aa] \ beginning of heap
-rax rdi sub_rr,rr	\ calculate length of heap
-rsi rax mov_rr,rr	\ move length to rsi
-rdx 7 mov_rr,x		\ PROT_READ + PROT_WRITE + PROT_EXEC
+edi DICTIONARY mov_rr,[aa] \ beginning of heap
+eax edi sub_rr,rr	\ calculate length of heap
+ecx eax mov_rr,rr	\ move length to ecx
+edx 7 mov_rr,x		\ PROT_READ + PROT_WRITE + PROT_EXEC
 sys.mprotect syscall
 2 rlabel_fs!
-rax pop
+eax pop
 ret
 
 native callcomp
 $ callcomp !
-rcx 5 mov_rr,x
+ecx 5 mov_rr,x
 1 label call
-rcx DP mov_rr,[aa]
-rcx E8 mov_byte_[rr],x \ call
+ecx DP mov_rr,[aa]
+ecx E8 mov_byte_[rr],x \ call
 2 label!
-rcx inc_rr
-rax rcx sub_rr,rr
-rax 4 sub_rr,s
-rcx rax mov_[rr],er
-rcx 4 add_rr,s
-DP rcx mov_[aa],rr
+ecx inc_rr
+eax ecx sub_rr,rr
+eax 4 sub_rr,s
+ecx eax mov_[rr],er
+ecx 4 add_rr,s
+DP ecx mov_[aa],rr
 tos_load
 ret
 
 x' callcomp does
 
 native tailcomp
-rcx 5 mov_rr,x
+ecx 5 mov_rr,x
 1 label call
-rcx DP mov_rr,[aa]
-rcx E9 mov_byte_[rr],x \ jmp
+ecx DP mov_rr,[aa]
+ecx E9 mov_byte_[rr],x \ jmp
 2 label jmp
 
 native endcomp
@@ -1003,34 +1022,34 @@ x' tailcomp call
 native }~fail
 2 rlabel_f!
 2 label!
-rcx FAIL mov_rr,aa
+ecx FAIL mov_rr,aa
 $ catch !
 3 label!
-rsp ERR_SP mov_rr,[aa]	\ restore rsp
-rdx pop			\ handler pointer in rdx
-rdx rdx or_rr,rr	\ check for zero
+esp ERR_SP mov_rr,[aa]	\ restore esp
+edx pop			\ handler pointer in edx
+edx edx or_rr,rr	\ check for zero
 4 jnz_fs
-rdx pop			\ finally pointer in rdx
-rcx push		\ save current effect
-rdx call_rr		\ execute finally
-rcx pop			\ restore current effect
-rax pop
-ERR_SP rax mov_[aa],rr	\ restore previous ERR_SP
+edx pop			\ finally pointer in edx
+ecx push		\ save current effect
+edx call_rr		\ execute finally
+ecx pop			\ restore current effect
+eax pop
+ERR_SP eax mov_[aa],rr	\ restore previous ERR_SP
 3 label jmp
 
 4 rlabel_fs!
-rcx rdx cmp_rr,rr	\ compare with current effect's
-rbx pop			\ rbx = previous handler address
-rax rdx mov_rr,[rr]
-rdx rbx mov_[rr],rr	\ restore previous handler address
-rbx rax mov_rr,rr	\ rbx = current handler address
-rax pop			\ rax = previous ERR_SP
-ERR_SP rax mov_[aa],rr	\ restore previous ERR_SP
+ecx edx cmp_rr,rr	\ compare with current effect's
+ebx pop			\ ebx = previous handler address
+eax edx mov_rr,[rr]
+edx ebx mov_[rr],rr	\ restore previous handler address
+ebx eax mov_rr,rr	\ ebx = current handler address
+eax pop			\ eax = previous ERR_SP
+ERR_SP eax mov_[aa],rr	\ restore previous ERR_SP
 3 label jnz		\ next handler, if not found
-rcx rbx mov_rr,rr	\ rcx = current handler address
-rbx pop			\ restore data stack pointer
-rax rbx mov_rr,[rr]	\ restore TOS
-rcx jmp_rr		\ continue with handler
+ecx ebx mov_rr,rr	\ ecx = current handler address
+ebx pop			\ restore data stack pointer
+eax ebx mov_rr,[rr]	\ restore TOS
+ecx jmp_rr		\ continue with handler
 
 x' endcomp does
 
@@ -1045,22 +1064,22 @@ ret
 \ arithmetic filters
 
 native 0=
-rax rax or_rr,rr
+eax eax or_rr,rr
 2 label jnz
 ret
 
 native 0<>
-rax rax or_rr,rr
+eax eax or_rr,rr
 2 label jz
 ret
 
 native 0>=
-rax rax or_rr,rr
+eax eax or_rr,rr
 2 label js
 ret
 
 native 0<
-rax rax or_rr,rr
+eax eax or_rr,rr
 2 label jns
 ret
 
@@ -1119,37 +1138,37 @@ ret
 native f>
 binary_fcmp
 2 label jbe
-rax rbx mov_rr,[rr]
+eax ebx mov_rr,[rr]
 ret
 
 native f>=
 binary_fcmp
 2 label jb
-rax rbx mov_rr,[rr]
+eax ebx mov_rr,[rr]
 ret
 
 native f<
 binary_fcmp
 2 label jae
-rax rbx mov_rr,[rr]
+eax ebx mov_rr,[rr]
 ret
 
 native f<=
 binary_fcmp
 2 label ja
-rax rbx mov_rr,[rr]
+eax ebx mov_rr,[rr]
 ret
 
 native f=
 binary_fcmp
 2 label jnz
-rax rbx mov_rr,[rr]
+eax ebx mov_rr,[rr]
 ret
 
 native f<>
 binary_fcmp
 2 label jz
-rax rbx mov_rr,[rr]
+eax ebx mov_rr,[rr]
 ret
 
 native >
@@ -1174,14 +1193,14 @@ ret
 
 \ compare strings for equality
 3 label!
-rsi rax mov_rr,rr
+esi eax mov_rr,rr
 tos_load
-rdi rax mov_rr,rr
-rcx rcx xor_rr,rr
+edi eax mov_rr,rr
+ecx ecx xor_rr,rr
 4 label!
-rcx rsi cmp_rl,[rr]
+ecx esi cmp_rl,[rr]
 5 jz_fs
-rcx rdi cmp_rl,[rr]
+ecx edi cmp_rl,[rr]
 6 jz_fs
 cmpsb
 4 label jz
@@ -1189,7 +1208,7 @@ cmpsb
 stc
 ret
 5 rlabel_fs!
-rcx rdi cmp_rl,[rr]
+ecx edi cmp_rl,[rr]
 ret
 
 native s=
@@ -1208,91 +1227,91 @@ DP address dp
 
 native dictionary
 tos_store
-rax DICTIONARY mov_rr,[aa]
+eax DICTIONARY mov_rr,[aa]
 ret
 
 native here
 tos_store
-rax DP mov_rr,[aa]
+eax DP mov_rr,[aa]
 ret
 
 native ,
-rcx xcell mov_rr,x
+ecx xcell mov_rr,x
 1 label call
-rcx DP mov_rr,[aa]
-rcx rax mov_[rr],rr
-rcx xcell add_rr,s
-DP rcx mov_[aa],rr
+ecx DP mov_rr,[aa]
+ecx eax mov_[rr],rr
+ecx xcell add_rr,s
+DP ecx mov_[aa],rr
 tos_load
 ret
 
 native d,
-rcx 4 mov_rr,x
+ecx 4 mov_rr,x
 1 label call
-rcx DP mov_rr,[aa]
-rcx rax mov_[rr],er
-rcx 4 add_rr,s
-DP rcx mov_[aa],rr
+ecx DP mov_rr,[aa]
+ecx eax mov_[rr],er
+ecx 4 add_rr,s
+DP ecx mov_[aa],rr
 tos_load
 ret
 
 native c,
-rcx 1 mov_rr,x
+ecx 1 mov_rr,x
 1 label call
-rcx DP mov_rr,[aa]
-rcx rax mov_[rr],rl
-rcx inc_rr
-DP rcx mov_[aa],rr
+ecx DP mov_rr,[aa]
+ecx eax mov_[rr],rl
+ecx inc_rr
+DP ecx mov_[aa],rr
 tos_load
 ret
 
 native @
-rax rax mov_rr,[rr]
+eax eax mov_rr,[rr]
 ret
 
 native d@
-rcx rax mov_er,[rr]
-rax rax xor_rr,rr
-rax rcx mov_er,er
+ecx eax mov_er,[rr]
+eax eax xor_rr,rr
+eax ecx mov_er,er
 ret
 
 native c@
-rcx rax mov_rl,[rr]
-rax rax xor_rr,rr
-rax rcx mov_rl,rl
+ecx eax mov_rl,[rr]
+eax eax xor_rr,rr
+eax ecx mov_rl,rl
 ret
 
 native !
 binary
-rcx rax mov_[rr],rr
+ecx eax mov_[rr],rr
 tos_load
 ret
 
 native d!
 binary
-rcx rax mov_[rr],er
+ecx eax mov_[rr],er
 tos_load
 ret
 
 native c!
 binary
-rcx rax mov_[rr],rl
+ecx eax mov_[rr],rl
 tos_load
 ret
 
 native allot
 binary
-rcx push
+ecx push
 1 label call
-rcx pop
-rcx DP add_rr,[aa]
-DP rcx mov_[aa],rr
+ecx pop
+ecx DP add_rr,[aa]
+DP ecx mov_[aa],rr
 ret
 
 \ end Sprout execution
 
 native bye
-rdi 0 mov_rr,x
+edi 0 mov_rr,x
 sys.exit syscall
 
 native vfork
@@ -1306,9 +1325,9 @@ tos_store
 ret
 
 native execve
-rdi rax mov_rr,rr          \ path
-tos_load rsi rax mov_rr,rr \ argv
-tos_load rdx rax mov_rr,rr \ envp
+edi eax mov_rr,rr          \ path
+tos_load ecx eax mov_rr,rr \ argv
+tos_load edx eax mov_rr,rr \ envp
 sys.execve syscall         \ never returns
 
 \ constants
@@ -1319,73 +1338,75 @@ PAD address pad
 
 native stdwrite
 binary
-rdi 1 mov_rr,x \ stdout
+edi 1 mov_rr,x \ stdout
 4 label!
-rsi rax mov_rr,rr \ buffer
-rdx rcx mov_rr,rr \ length
+edx ecx mov_rr,rr \ length
+ecx eax mov_rr,rr \ buffer
 sys.write syscall
 ret
 
 native stderrwrite
 binary
-rdi 2 mov_rr,x \ stderr
+edi 2 mov_rr,x \ stderr
 4 label jmp
 
 effect write ( -( write )- )
 
 \ read a byte from a file descriptor
 native getbyte
-rdi rax mov_rr,rr \ file descriptor
-rsi EMIT_BUF mov_rr,aa
-rdx 1 mov_rr,x
+edi eax mov_rr,rr \ file descriptor
+ecx EMIT_BUF mov_rr,aa
+edx 1 mov_rr,x
 sys.read syscall
-rax rax or_rr,rr
+eax eax or_rr,rr
 2 label jz
-rax rax xor_rr,rr
-rax EMIT_BUF mov_rl,[aa]
+eax eax xor_rr,rr
+eax EMIT_BUF mov_rl,[aa]
 ret
 
 effect key ( -( key fail )- c )
 
 \ edit a line of text on stdin (quick and dirty)
 native stdinput
-rax push
-rsi TIB_BUF mov_rr,aa
-TIB rsi mov_[aa],rr
+eax push
+esi TIB_BUF mov_rr,aa
+TIB esi mov_[aa],rr
 3 label!
-rsi push
-rdi 0 mov_rr,x
-rdx 1 mov_rr,x
+esi push
+ecx esi mov_rr,rr
+edi 0 mov_rr,x
+edx 1 mov_rr,x
 sys.read syscall
-rsi pop
-rax 1 cmp_rr,s
+esi pop
+eax 1 cmp_rr,s
 2 label jnz
-rax rsi mov_rl,[rr]
-rax A cmp_rr,s
+eax esi mov_rl,[rr]
+eax A cmp_rr,s
 4 jz_fs
-rsi inc_rr
-rcx TIB_BUF TIB_BUF_LEN + 1+ mov_rr,aa
-rsi rcx cmp_rr,rr
+esi inc_rr
+ecx TIB_BUF TIB_BUF_LEN + 1+ mov_rr,aa
+esi ecx cmp_rr,rr
 3 label jnz
 4 rlabel_fs!
-rsi 0 mov_byte_[rr],x
-rax pop
+esi 0 mov_byte_[rr],x
+eax pop
 ret
 
 effect input
 
 \ open a file for reading
 native _readfile
-rdi rax mov_rr,rr
-rsi rsi xor_rr,rr \ O_RDONLY
+edi eax mov_rr,rr
+ecx ecx xor_rr,rr \ O_RDONLY
+edx edx xor_rr,rr \ mode
 sys.open syscall
-rax rax or_rr,rr
+eax eax or_rr,rr
 2 label js
 ret
 
 \ close a file
 native _closefile
-rdi rax mov_rr,rr
+edi eax mov_rr,rr
 sys.close syscall
 tos_load
 ret
@@ -1397,13 +1418,13 @@ tos_load
 ret
 
 native nip
-rbx xcell sub_rr,s
+ebx xcell sub_rr,s
 ret
 
 native swap
 binary
-rbx rcx mov_[rr],rr
-rbx xcell add_rr,s
+ebx ecx mov_[rr],rr
+ebx xcell add_rr,s
 ret
 
 native dup
@@ -1412,34 +1433,34 @@ ret
 
 native over
 binary
-rbx xcell add_rr,s
-rbx rcx mov_[rr],rr
-rbx xcell add_rr,s
+ebx xcell add_rr,s
+ebx ecx mov_[rr],rr
+ebx xcell add_rr,s
 ret
 
 native third
-rcx rbx mov_rr,rr
+ecx ebx mov_rr,rr
 tos_store
-rcx 2 xcells sub_rr,s
-rax rcx mov_rr,[rr]
+ecx 2 xcells sub_rr,s
+eax ecx mov_rr,[rr]
 ret
 
 native >r
 binary
-rdx pop
-rcx push
-rdx jmp_rr
+edx pop
+ecx push
+edx jmp_rr
 
 native r>
 tos_store
-rcx pop
-rax pop
-rcx jmp_rr
+ecx pop
+eax pop
+ecx jmp_rr
 
 native r>drop
-rcx pop
-rdx pop
-rcx jmp_rr
+ecx pop
+edx pop
+ecx jmp_rr
 
 \ execution control
 
@@ -1454,104 +1475,104 @@ does
 \ reference to identity
 native 'id
 tos_store
-rax x' } mov_rr,aa
+eax x' } mov_rr,aa
 ret
 
 \ execute computation
 native execute
 $ exec !
 binary
-rcx jmp_rr
+ecx jmp_rr
 
 \ register computation to be executed finally
 native finally
-binary			\ finally reference in rcx
-rsi pop			\ return address in rsi
-rdx ERR_SP mov_rr,[aa]	\ ERR_SP in rdx
-rdx push
-rcx push
-rcx rcx xor_rr,rr
-rcx push		\ 0 marker for finally frame
-ERR_SP rsp mov_[aa],rr	\ set new ERR_SP
-rsi call_rr		\ call what follows
-rsp ERR_SP mov_rr,[aa]	\ stack fo finally frame
-rcx pop			\ discard marker
-rcx pop			\ finally reference in rcx
-rdx pop			\ previous ERR_SP in rdx
-ERR_SP rdx mov_[aa],rr	\ restore previous ERR_SP
-rcx jmp_rr		\ continue with finally
+binary			\ finally reference in ecx
+esi pop			\ return address in esi
+edx ERR_SP mov_rr,[aa]	\ ERR_SP in edx
+edx push
+ecx push
+ecx ecx xor_rr,rr
+ecx push		\ 0 marker for finally frame
+ERR_SP esp mov_[aa],rr	\ set new ERR_SP
+esi call_rr		\ call what follows
+esp ERR_SP mov_rr,[aa]	\ stack fo finally frame
+ecx pop			\ discard marker
+ecx pop			\ finally reference in ecx
+edx pop			\ previous ERR_SP in edx
+ERR_SP edx mov_[aa],rr	\ restore previous ERR_SP
+ecx jmp_rr		\ continue with finally
 
 \ handle effect
 native handle
-binary			\ effect reference in rcx
-rcx 3 add_rr,s
-rdx rdx xor_rr,rr
-rdx rcx mov_er,[rr]	\ handler pointer in rdx
+binary			\ effect reference in ecx
+ecx 3 add_rr,s
+edx edx xor_rr,rr
+edx ecx mov_er,[rr]	\ handler pointer in edx
 3 label!
-rbx 2 xcells sub_rr,s	\ data stack pointer to be saved
-rbx push		\ save data stack pointer
-rbx 2 xcells add_rr,s	\ current data stack pointer
-rcx ERR_SP mov_rr,[aa]	\ ERR_SP in rcx
-rcx push		\ save previous ERR_SP
-rcx rdx mov_rr,[rr]	\ previous handler address in rcx
-rcx push		\ save previous handler address
-rdx push		\ save handler pointer
-ERR_SP rsp mov_[aa],rr  \ set new ERR_SP
-binary			\ handler reference in rcx
-rdx rcx mov_[rr],rr	\ handler reference changed
+ebx 2 xcells sub_rr,s	\ data stack pointer to be saved
+ebx push		\ save data stack pointer
+ebx 2 xcells add_rr,s	\ current data stack pointer
+ecx ERR_SP mov_rr,[aa]	\ ERR_SP in ecx
+ecx push		\ save previous ERR_SP
+ecx edx mov_rr,[rr]	\ previous handler address in ecx
+ecx push		\ save previous handler address
+edx push		\ save handler pointer
+ERR_SP esp mov_[aa],rr  \ set new ERR_SP
+binary			\ handler reference in ecx
+edx ecx mov_[rr],rr	\ handler reference changed
 x' execute call		\ execute code with effects
-rsp ERR_SP mov_rr,[aa]	\ stack to handler frame
-rcx pop			\ handler ptr in rcx
-rdx pop			\ previous handler addr. in rdx
-rcx rdx mov_[rr],rr	\ restore handler
-rcx pop
-ERR_SP rcx mov_[aa],rr	\ restore ERR_SP
-rsp xcell add_rr,s	\ discard data stack pointer
+esp ERR_SP mov_rr,[aa]	\ stack to handler frame
+ecx pop			\ handler ptr in ecx
+edx pop			\ previous handler addr. in edx
+ecx edx mov_[rr],rr	\ restore handler
+ecx pop
+ERR_SP ecx mov_[aa],rr	\ restore ERR_SP
+esp xcell add_rr,s	\ discard data stack pointer
 ret
 
 \ execute computation with exception
 native catch
-binary			\ exception reference in rcx
-rcx 1 add_rr,s
-rdx rdx xor_rr,rr
-rdx rcx mov_er,[rr]	\ handler pointer in rdx
+binary			\ exception reference in ecx
+ecx 1 add_rr,s
+edx edx xor_rr,rr
+edx ecx mov_er,[rr]	\ handler pointer in edx
 3 label jmp
 
 \ execute computation with environment
 native reader
-rdx ENV mov_rr,aa
+edx ENV mov_rr,aa
 3 label jmp
 
 \ fetch environment
 native ask
 tos_store
-rax ENV mov_rr,[aa]
+eax ENV mov_rr,[aa]
 ret
 
 \ execute computation with scratch space
 native frame
 binary
-rcx xcelllog shl_rr,s           \ xcell *
-rsp rcx sub_rr,rr \ allocate frame
+ecx xcelllog shl_rr,s           \ xcell *
+esp ecx sub_rr,rr \ allocate frame
 tos_store
-rax rsp mov_rr,rr \ frame base on data stack
-rcx push
-rdx FRAME mov_rr,aa
+eax esp mov_rr,rr \ frame base on data stack
+ecx push
+edx FRAME mov_rr,aa
 3 label call
-rcx pop
-rsp rcx add_rr,rr \ deallocate frame
+ecx pop
+esp ecx add_rr,rr \ deallocate frame
 ret
 
 \ fetch frame bottom address
 native fbot
 tos_store
-rax FRAME mov_rr,[aa]
+eax FRAME mov_rr,[aa]
 ret
 
 \ disjunction combinator
 native |
 ( a ( a -( fail e )- a b ) ( a -( f )- a b ) -( e f )- a b )
-rdx FAIL mov_rr,aa
+edx FAIL mov_rr,aa
 3 label jmp
 
 \ tail disjunction
@@ -1571,65 +1592,65 @@ x' endcomp does
 
 \ cut handler
 native cut
-rdi ERR_SP mov_rr,[aa]
-rcx rdi mov_rr,[rr]	\ handler ptr in rcx
-rdi xcell add_rr,s
-rdx rdi mov_rr,[rr]	\ previous handler reference in rdx
-rdi xcell add_rr,s
-rcx rdx mov_[rr],rr	\ restore previous handler
-rcx rdi mov_rr,[rr]	\ previous ERR_SP in rcx
-ERR_SP rcx mov_[aa],rr	\ restore previous ERR_SP
+edi ERR_SP mov_rr,[aa]
+ecx edi mov_rr,[rr]	\ handler ptr in ecx
+edi xcell add_rr,s
+edx edi mov_rr,[rr]	\ previous handler reference in edx
+edi xcell add_rr,s
+ecx edx mov_[rr],rr	\ restore previous handler
+ecx edi mov_rr,[rr]	\ previous ERR_SP in ecx
+ERR_SP ecx mov_[aa],rr	\ restore previous ERR_SP
 ret
 
 \ pend
 native &
-rsi pop			\ return address in rsi
-binary			\ failure handler in rcx
-rbx push		\ save data stack pointer
-rdx ERR_SP mov_rr,[aa]	\ previous ERR_SP in rdx
-rdx push		\ save previous ERR_SP
-rdx FAIL mov_rr,[aa]	\ previous handler in rdx
-rdx push		\ save previous handler
-rdx FAIL mov_rr,aa
-rdx push		\ save failure handler pointer
-rdx rcx	mov_[rr],rr	\ set new handler
-ERR_SP rsp mov_[aa],rr	\ set new ERR_SP
-rcx 3 xcells mov_rr,x	\ frame offset
-rcx rsp add_rr,rr	\ add stack pointer
+esi pop			\ return address in esi
+binary			\ failure handler in ecx
+ebx push		\ save data stack pointer
+edx ERR_SP mov_rr,[aa]	\ previous ERR_SP in edx
+edx push		\ save previous ERR_SP
+edx FAIL mov_rr,[aa]	\ previous handler in edx
+edx push		\ save previous handler
+edx FAIL mov_rr,aa
+edx push		\ save failure handler pointer
+edx ecx	mov_[rr],rr	\ set new handler
+ERR_SP esp mov_[aa],rr	\ set new ERR_SP
+ecx 3 xcells mov_rr,x	\ frame offset
+ecx esp add_rr,rr	\ add stack pointer
 3 label!
-rcx push
-rsi call_rr		\ call what follows
-rcx pop
-rcx xcell add_rr,s
-rsi rcx mov_rr,[rr]
+ecx push
+esi call_rr		\ call what follows
+ecx pop
+ecx xcell add_rr,s
+esi ecx mov_rr,[rr]
 3 label jmp
 
 \ arithmetic mappers
 
 native 1-
-rax 1 sub_rr,s
+eax 1 sub_rr,s
 ret
 
 native 1+
-rax 1 add_rr,s
+eax 1 add_rr,s
 ret
 
 native cell-
-rax xcell sub_rr,s
+eax xcell sub_rr,s
 ret
 
 native cell+
-rax xcell add_rr,s
+eax xcell add_rr,s
 ret
 
 native cells
-rax xcelllog shl_rr,s
+eax xcelllog shl_rr,s
 ret
 
 native abs
-rax rax or_rr,rr
+eax eax or_rr,rr
 3 jns_fs
-rax neg_rr
+eax neg_rr
 3 rlabel_fs!
 ret
 
@@ -1637,66 +1658,66 @@ ret
 
 native +
 binary
-rax rcx add_rr,rr
+eax ecx add_rr,rr
 ret
 
 native -
 binary
-rax rcx sub_rr,rr
+eax ecx sub_rr,rr
 ret
 
 native u* ( n n -- l h )
 binary
-rcx mul_rr
+ecx mul_rr
 tos_store
-rax rdx mov_rr,rr
+eax edx mov_rr,rr
 ret
 
 exception 0/
 
 native u/mod ( n n -( 0/ )- n n )
 binary
-rcx rcx or_rr,rr
+ecx ecx or_rr,rr
 x' 0/ jz
-rdx rdx xor_rr,rr
-rcx div_rr
-rbx rdx mov_[rr],rr
-rbx xcell add_rr,s
+edx edx xor_rr,rr
+ecx div_rr
+ebx edx mov_[rr],rr
+ebx xcell add_rr,s
 ret
 
 native du/mod ( n n n -( 0/ )- n n )
-rcx rax mov_rr,rr
-rcx rcx or_rr,rr
+ecx eax mov_rr,rr
+ecx ecx or_rr,rr
 x' 0/ jz
-rbx xcell sub_rr,s
-rdx rbx mov_rr,[rr]
+ebx xcell sub_rr,s
+edx ebx mov_rr,[rr]
 tos_load
-rcx div_rr
-rbx rdx mov_[rr],rr
-rbx xcell add_rr,s
+ecx div_rr
+ebx edx mov_[rr],rr
+ebx xcell add_rr,s
 ret
 
 native /mod ( n n -( 0/ )- n n )
 binary
-rcx rcx or_rr,rr
+ecx ecx or_rr,rr
 x' 0/ jz
-rax rax add_rr,rr
-rdx rdx sbb_rr,rr
-rax rcr_rr,1
-rcx idiv_rr
-rdx rdx or_rr,rr
+eax eax add_rr,rr
+edx edx sbb_rr,rr
+eax rcr_rr,1
+ecx idiv_rr
+edx edx or_rr,rr
 3 jz_fs
-rdx rcx xor_rr,rr
+edx ecx xor_rr,rr
 4 jns_fs
-rdx rcx xor_rr,rr
-rdx rcx add_rr,rr
-rax 1 sub_rr,s
-rdx rcx xor_rr,rr
+edx ecx xor_rr,rr
+edx ecx add_rr,rr
+eax 1 sub_rr,s
+edx ecx xor_rr,rr
 4 rlabel_fs!
-rdx rcx xor_rr,rr
+edx ecx xor_rr,rr
 3 rlabel_fs!
-rbx rdx mov_[rr],rr
-rbx xcell add_rr,s
+ebx edx mov_[rr],rr
+ebx xcell add_rr,s
 ret
 
 
@@ -1704,55 +1725,55 @@ ret
 
 native and
 binary
-rax rcx and_rr,rr
+eax ecx and_rr,rr
 ret
 
 native or
 binary
-rax rcx or_rr,rr
+eax ecx or_rr,rr
 ret
 
 native xor
 binary
-rax rcx xor_rr,rr
+eax ecx xor_rr,rr
 ret
 
 native invert
-rax not_rr
+eax not_rr
 ret
 
 native negate
-rax neg_rr
+eax neg_rr
 ret
 
 3 label!
-rax rax xor_rr,rr
+eax eax xor_rr,rr
 ret
 
 native lshift
 binary
-rcx xcell_bits cmp_rr,s
+ecx xcell_bits cmp_rr,s
 3 label jae
-rax shl_rr,cl
+eax shl_rr,cl
 ret
 
 native rshift
 binary
-rcx xcell_bits cmp_rr,s
+ecx xcell_bits cmp_rr,s
 3 label jae
-rax shr_rr,cl
+eax shr_rr,cl
 ret
 
 3 label!
-rax rax add_rr,rr
-rax rax sbb_rr,rr
+eax eax add_rr,rr
+eax eax sbb_rr,rr
 ret
 
 native arshift
 binary
-rcx xcell_bits 1- cmp_rr,s	\ 1- is for the sign bit
+ecx xcell_bits 1- cmp_rr,s	\ 1- is for the sign bit
 3 label jae
-rax sar_rr,cl
+eax sar_rr,cl
 ret
 
 \ floating point primitives
@@ -1777,16 +1798,16 @@ ret
 
 \ integer to floating point conversion
 native int>f
-rbx rax mov_[rr],rr
-rbx fild_[rr]
+ebx eax mov_[rr],rr
+ebx fild_[rr]
 value_fp
 ret
 
 \ floating point to integer conversion, rounds towards -inf
 native f>int
 unary_fp
-rbx fistp_[rr]
-rax rbx mov_rr,[rr]
+ebx fistp_[rr]
+eax ebx mov_rr,[rr]
 ret
 
 \ integer part of a floating point number
@@ -1851,8 +1872,8 @@ ret
 native f^
 unary_fp
 fld1
-rbx xcell sub_rr,s
-rbx fld_[rr]
+ebx xcell sub_rr,s
+ebx fld_[rr]
 fyl2x
 fmulp
 fld1
@@ -1890,7 +1911,7 @@ native }~
 
 { drop word find drop endcomp } does
 
-\ prelude compiler (no prelude in Linux amd64)
+\ prelude compiler (no prelude in Linux i386)
 {: vm, }
 
 x' drop does
@@ -1901,9 +1922,9 @@ x' drop does
 \ literal constructors
 
 {: literal
-48 c, 89 c, 03 c,
-48 c, 83 c, C3 c, 08 c,
-48 c, B8 c, }~ , 
+89 c, 03 c,
+83 c, C3 c, 4 c,
+B8 c, }~ ,
 
 alias fliteral literal
 
@@ -1926,8 +1947,8 @@ E8 c, 0 }~ d,
 
 {: }}
 dup here swap - swap 4 - d!
-48 c, 89 c, 03 c,
-48 c, 83 c, C3 c, 08 c,
+89 c, 03 c,
+83 c, C3 c, 4 c,
 58 }~ c,
 
 \ self references
@@ -2176,7 +2197,7 @@ drop }~ drop
 
 \ list extension
 {: link
-here 7 + 7 and 7 xor allot
+here 3 + 3 and 3 xor allot
 here swap }~ ,
 
 \ list traversal
@@ -2294,7 +2315,7 @@ current @ !
 here cell+ cell+ pad length + 1+ ,
 ' callcomp ,
 pad s, 0 c,
-here 12 +
+here B +
 literal
 C3 c,			\ ret
 }
@@ -2326,7 +2347,7 @@ FF c, 24 c, 25 c, d,	\ jmp [address]
 {: exception ( x -( heap )- )
 create redefine
 here A +
-B9 c, d,		\ mov rcx, address
+B9 c, d,		\ mov ecx, address
 E9 c,			\ jmp
 [ catch @ 4 - xaliteral ] here - d,
 ' bye }~ ,
@@ -2389,7 +2410,7 @@ fbot dup cell- @ }~ +
 
 \ previous frame base address
 {: pfbot ( -( fbot fail )- a )
-fbot 28 - @ }~ 0<>
+fbot 14 - @ }~ 0<>
 
 \ end address of the previous frame
 {: pftop ( -( fbot fail )- a )
@@ -2484,8 +2505,8 @@ pad
 
 \ sprout vocabulary
 native sprout
-rcx SPROUT mov_rr,aa
-CONTEXT rcx mov_[aa],rr
+ecx SPROUT mov_rr,aa
+CONTEXT ecx mov_[aa],rr
 ret
 
 \ UTF-8 functions
@@ -2556,17 +2577,17 @@ cell- dup @ current @ ! dp }~ !
 
 \ output data stack content
 native .s
-rcx effects @ xcell+ mov_rr,aa \ stack bottom
+ecx effects @ xcell+ mov_rr,aa \ stack bottom
 3 label!
-rbx rcx cmp_rr,rr
+ebx ecx cmp_rr,rr
 x' cr jc
 4 jz_fs
-rcx push
+ecx push
 tos_store
-rax rcx mov_rr,[rr]
+eax ecx mov_rr,[rr]
 x' . call
-rcx pop
-rcx xcell add_rr,s
+ecx pop
+ecx xcell add_rr,s
 3 label jmp
 4 rlabel_fs!
 tos_store
@@ -2605,49 +2626,49 @@ $ 177F w, \ FPU control word, round towards -inf
 7 label!
 
 finit
-rbx swap mov_rr,aa \ FPU control word address in rbx
-rbx fldcw_[rr]
-rax A mov_rr,x
-BASE rax mov_[aa],rl \ initialize numeral base
-rdi 0 mov_rr,x
+ebx swap mov_rr,aa \ FPU control word address in ebx
+ebx fldcw_[rr]
+eax A mov_rr,x
+BASE eax mov_[aa],rl \ initialize numeral base
+edi 0 mov_rr,x
 0 label call \ get heap bottom
-DP rax mov_[aa],rr \ initialize dictionary end
-DICTIONARY rax mov_[aa],rr \ and beginning
-rbx effects @ mov_rr,aa \ initialize stack pointer
-rcx xcurrent @ mov_rr,aa \ initial vocabulary
-rdx SPROUT mov_rr,aa \ sprout vocabulary pointer
-rdx rcx mov_[rr],rr \ initialize it
-CONTEXT rdx mov_[aa],rr \ initialize context vocabulary
-CURRENT rdx mov_[aa],rr \ initialize current vocabulary
+DP eax mov_[aa],rr \ initialize dictionary end
+DICTIONARY eax mov_[aa],rr \ and beginning
+ebx effects @ mov_rr,aa \ initialize stack pointer
+ecx xcurrent @ mov_rr,aa \ initial vocabulary
+edx SPROUT mov_rr,aa \ sprout vocabulary pointer
+edx ecx mov_[rr],rr \ initialize it
+CONTEXT edx mov_[aa],rr \ initialize context vocabulary
+CURRENT edx mov_[aa],rr \ initialize current vocabulary
 
 6 label!
-rbx rax mov_[rr],rr	\ save TOS
-rbx push		\ save data stack ptr.
-rcx rsp mov_rr,rr	\ return stack ptr. to rcx
-rcx 3 xcells sub_rr,s	\ bottom of handler frame
-rcx push		\ circular reference
-rcx 6 label mov_rr,aa	\ this handler's address
-rcx push		\ circular reference
-rcx FAIL mov_rr,aa	\ failure handler
-rcx push
-ERR_SP rsp mov_[aa],rr	\ set ERR_SP
+ebx eax mov_[rr],rr	\ save TOS
+ebx push		\ save data stack ptr.
+ecx esp mov_rr,rr	\ return stack ptr. to ecx
+ecx 3 xcells sub_rr,s	\ bottom of handler frame
+ecx push		\ circular reference
+ecx 6 label mov_rr,aa	\ this handler's address
+ecx push		\ circular reference
+ecx FAIL mov_rr,aa	\ failure handler
+ecx push
+ERR_SP esp mov_[aa],rr	\ set ERR_SP
 
 \ initialize effects
-rcx x' stdwrite mov_rr,aa
-EFFECTS rcx mov_[aa],rr
-rcx x' stdkey mov_rr,aa
-EFFECTS 8 + rcx mov_[aa],rr
-rcx x' stdinput mov_rr,aa
-EFFECTS 10 + rcx mov_[aa],rr
+ecx x' stdwrite mov_rr,aa
+EFFECTS ecx mov_[aa],rr
+ecx x' stdkey mov_rr,aa
+EFFECTS 4 + ecx mov_[aa],rr
+ecx x' stdinput mov_rr,aa
+EFFECTS 8 + ecx mov_[aa],rr
 \ division by zero exception
-rcx x' stderrok mov_rr,aa
-EFFECTS 20 + rcx mov_[aa],rr
+ecx x' stderrok mov_rr,aa
+EFFECTS 10 + ecx mov_[aa],rr
 
 \ check arguments
-rcx 20 mov_rr,x
-rcx rsp add_rr,rr
-rcx rcx mov_rr,[rr]
-rcx 2 cmp_rr,s
+ecx 10 mov_rr,x
+ecx esp add_rr,rr
+ecx ecx mov_rr,[rr]
+ecx 2 cmp_rr,s
 7 jnc_fs
 
 \ execute sprout loop
@@ -2656,12 +2677,10 @@ x' bye jmp
 
 7 rlabel_fs!
 tos_store
-rax 30 mov_rr,x
-rax rsp add_rr,rr
-rax rax mov_rr,[rr]
+eax 18 mov_rr,x
+eax esp add_rr,rr
+eax eax mov_rr,[rr]
 x' _sprout jmp
-
-0 q,
 
 $ dup dup
 f_SizeInFile @ w!
