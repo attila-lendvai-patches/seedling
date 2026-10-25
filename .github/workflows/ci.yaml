@@ -5,6 +5,7 @@ on:
     branches:
       - master
       - staging
+      - attila
     paths-ignore:
       - '**.md'
 
@@ -23,6 +24,9 @@ jobs:
         uses: actions/checkout@v3
         with:
           fetch-depth: 0
+
+      - name: Install QEMU user-mode emulators and elfutils
+        run: sudo apt-get update && sudo apt-get install -y qemu-user elfutils
 
       - name: (x86) Compile Sprout from the Seed binary
         run: |
@@ -44,20 +48,144 @@ jobs:
           ./build/seed.amd64.2 <seed/src/seed-linux-amd64.seed >build/seed.amd64.3
           cmp --verbose ./build/seed.amd64.2 ./build/seed.amd64.3
 
+      - name: (aarch64) Seed bootstraps itself
+        run: |
+          ./seed/bin/seed-linux-amd64 <seed/src/seed-linux-aarch64.seed >build/seed-aarch64
+          chmod +x build/seed-aarch64
+          qemu-aarch64 ./build/seed-aarch64 <seed/src/seed-linux-aarch64.seed >build/seed-aarch64.2
+          chmod +x build/seed-aarch64.2
+          qemu-aarch64 ./build/seed-aarch64.2 <seed/src/seed-linux-aarch64.seed >build/seed-aarch64.3
+          cmp --verbose ./build/seed-aarch64.2 ./build/seed-aarch64.3
+
+      - name: (i386) Seed bootstraps itself
+        run: |
+          ./seed/bin/seed-linux-amd64 <seed/src/seed-linux-i386.seed >build/seed-i386
+          chmod +x build/seed-i386
+          qemu-i386 ./build/seed-i386 <seed/src/seed-linux-i386.seed >build/seed-i386.2
+          chmod +x build/seed-i386.2
+          qemu-i386 ./build/seed-i386.2 <seed/src/seed-linux-i386.seed >build/seed-i386.3
+          cmp --verbose ./build/seed-i386.2 ./build/seed-i386.3
+
+      - name: (i386) Sprout bootstraps itself
+        run: |
+          ./seed/bin/seed-linux-amd64 <sprout/src/sprout-linux-i386.seed >build/sprout-i386
+          chmod +x build/sprout-i386
+          qemu-i386 ./build/sprout-i386 <sprout/src/sprout-linux-i386.seed >build/sprout-i386.2
+          chmod +x build/sprout-i386.2
+          qemu-i386 ./build/sprout-i386.2 <sprout/src/sprout-linux-i386.seed >build/sprout-i386.3
+          cmp --verbose ./build/sprout-i386.2 ./build/sprout-i386.3
+
+      - name: (aarch64) Sprout builds identically with the Seed and the aarch64 Seed
+        run: |
+          ./build/sprout <sprout/src/sprout-linux-aarch64.seed >build/sprout-aarch64
+          chmod +x build/sprout-aarch64
+          ./seed/bin/seed-linux-amd64 <sprout/src/sprout-linux-aarch64.seed >build/sprout-aarch64.by-seed
+          cmp --verbose ./build/sprout-aarch64 ./build/sprout-aarch64.by-seed
+          qemu-aarch64 ./build/seed-aarch64.2 <sprout/src/sprout-linux-aarch64.seed >build/sprout-aarch64.by-aarch64-seed
+          cmp --verbose ./build/sprout-aarch64 ./build/sprout-aarch64.by-aarch64-seed
+
+      - name: (aarch64) Sprout bootstraps itself
+        run: |
+          qemu-aarch64 ./build/sprout-aarch64 <sprout/src/sprout-linux-aarch64.seed >build/sprout-aarch64.2
+          chmod +x build/sprout-aarch64.2
+          qemu-aarch64 ./build/sprout-aarch64.2 <sprout/src/sprout-linux-aarch64.seed >build/sprout-aarch64.3
+          cmp --verbose ./build/sprout-aarch64.2 ./build/sprout-aarch64.3
+
+      - name: (aarch64) Sprout compiles the Seed; the result bootstraps itself
+        run: |
+          qemu-aarch64 ./build/sprout-aarch64 <seed/src/seed-linux-aarch64.seed >build/seed-aarch64.by-sprout
+          chmod +x build/seed-aarch64.by-sprout
+          cmp --verbose ./build/seed-aarch64 ./build/seed-aarch64.by-sprout
+          qemu-aarch64 ./build/seed-aarch64.by-sprout <seed/src/seed-linux-aarch64.seed >build/seed-aarch64.by-sprout.2
+          chmod +x build/seed-aarch64.by-sprout.2
+          qemu-aarch64 ./build/seed-aarch64.by-sprout.2 <seed/src/seed-linux-aarch64.seed >build/seed-aarch64.by-sprout.3
+          cmp --verbose ./build/seed-aarch64.by-sprout.2 ./build/seed-aarch64.by-sprout.3
+
+      - name: (amd64) Sprout compiles the aarch64 and i386 sources
+        run: |
+          ./build/sprout <seed/src/seed-linux-aarch64.seed >build/seed-aarch64.by-sprout
+          cmp --verbose ./build/seed-aarch64.2 ./build/seed-aarch64.by-sprout
+          ./build/sprout <seed/src/seed-linux-i386.seed >build/seed-i386.by-sprout
+          cmp --verbose ./build/seed-i386.2 ./build/seed-i386.by-sprout
+          ./build/sprout <sprout/src/sprout-linux-aarch64.seed >build/sprout-aarch64.by-sprout
+          cmp --verbose ./build/sprout-aarch64 ./build/sprout-aarch64.by-sprout
+          ./build/sprout <sprout/src/sprout-linux-i386.seed >build/sprout-i386.by-sprout
+          cmp --verbose ./build/sprout-i386.2 ./build/sprout-i386.by-sprout
+
+      - name: (aarch64) Seed compiles the amd64 and i386 Seeds and Sprouts
+        run: |
+          qemu-aarch64 ./build/seed-aarch64.2 <seed/src/seed-linux-amd64.seed >build/seed-amd64.by-aarch64
+          cmp --verbose ./build/seed.amd64.2 ./build/seed-amd64.by-aarch64
+          qemu-aarch64 ./build/seed-aarch64.2 <seed/src/seed-linux-i386.seed >build/seed-i386.by-aarch64
+          cmp --verbose ./build/seed-i386.2 ./build/seed-i386.by-aarch64
+          qemu-aarch64 ./build/seed-aarch64.2 <sprout/src/sprout-linux-amd64.seed >build/sprout-amd64.by-aarch64
+          cmp --verbose ./build/sprout ./build/sprout-amd64.by-aarch64
+          qemu-aarch64 ./build/seed-aarch64.2 <sprout/src/sprout-linux-i386.seed >build/sprout-i386.by-aarch64
+          cmp --verbose ./build/sprout-i386.2 ./build/sprout-i386.by-aarch64
+
+      - name: (aarch64) Sprout compiles the amd64 and i386 sources
+        run: |
+          qemu-aarch64 ./build/sprout-aarch64 <seed/src/seed-linux-amd64.seed >build/seed-amd64.by-aarch64-sprout
+          cmp --verbose ./build/seed.amd64.2 ./build/seed-amd64.by-aarch64-sprout
+          qemu-aarch64 ./build/sprout-aarch64 <seed/src/seed-linux-i386.seed >build/seed-i386.by-aarch64-sprout
+          cmp --verbose ./build/seed-i386.2 ./build/seed-i386.by-aarch64-sprout
+          qemu-aarch64 ./build/sprout-aarch64 <sprout/src/sprout-linux-amd64.seed >build/sprout-amd64.by-aarch64-sprout
+          cmp --verbose ./build/sprout ./build/sprout-amd64.by-aarch64-sprout
+          qemu-aarch64 ./build/sprout-aarch64 <sprout/src/sprout-linux-i386.seed >build/sprout-i386.by-aarch64-sprout
+          cmp --verbose ./build/sprout-i386.2 ./build/sprout-i386.by-aarch64-sprout
+
+      - name: (i386) Seed and Sprout compile the amd64 Seed and the i386 sources
+        run: |
+          qemu-i386 ./build/seed-i386.2 <seed/src/seed-linux-amd64.seed >build/seed-amd64.by-i386
+          cmp --verbose ./build/seed.amd64.2 ./build/seed-amd64.by-i386
+          qemu-i386 ./build/seed-i386.2 <sprout/src/sprout-linux-i386.seed >build/sprout-i386.by-i386-seed
+          cmp --verbose ./build/sprout-i386.2 ./build/sprout-i386.by-i386-seed
+          qemu-i386 ./build/sprout-i386.2 <seed/src/seed-linux-i386.seed >build/seed-i386.by-sprout
+          cmp --verbose ./build/seed-i386.2 ./build/seed-i386.by-sprout
+          qemu-i386 ./build/sprout-i386.2 <seed/src/seed-linux-amd64.seed >build/seed-amd64.by-i386-sprout
+          cmp --verbose ./build/seed.amd64.2 ./build/seed-amd64.by-i386-sprout
+
       - name: (x86) Seed cross-compiles to z80
         run: |
           ./seed/bin/seed-linux-amd64 <seed/src/seed-z80-fictional.seed >build/seed.z80
 
+      - name: Build the Z80 simulator
+        run: |
+          sudo apt-get update && sudo apt-get install -y libz80ex-dev git
+          git clone --depth 1 https://github.com/nagydani/z80sim.git
+          make -C z80sim
+
+      # The 16-bit z80 Seed compiles amd64, i386 and itself directly.
       - name: (z80) Seed bootstraps itself
         run: |
-          sudo apt-get update && sudo apt-get install libz80ex-dev git
-          git clone https://github.com/nagydani/z80sim/
-          sh -c "cd z80sim && make"
           ./z80sim/z80sim ./build/seed.z80   <seed/src/seed-z80-fictional.seed >build/seed.z80.1
           ./z80sim/z80sim ./build/seed.z80.1 <seed/src/seed-z80-fictional.seed >build/seed.z80.2
           cmp --verbose ./build/seed.z80.1 ./build/seed.z80.2
 
-      - name: (z80) Seed cross-compiles to x86
+      - name: (z80) Seed cross-compiles to amd64
         run: |
           ./z80sim/z80sim ./build/seed.z80   <seed/src/seed-linux-amd64.seed >build/seed.z80-amd64
           cmp --verbose ./build/seed.amd64.2 ./build/seed.z80-amd64
+
+      - name: (z80) Seed cross-compiles to i386
+        run: |
+          ./z80sim/z80sim ./build/seed.z80   <seed/src/seed-linux-i386.seed >build/seed.i386.by-z80
+          cmp --verbose ./build/seed-i386.2 ./build/seed.i386.by-z80
+
+      - name: (z80) Seed cross-compiles to aarch64
+        run: |
+          ./z80sim/z80sim ./build/seed.z80 <seed/src/seed-linux-aarch64.seed >build/seed-aarch64.by-z80
+          cmp --verbose ./build/seed-aarch64.2 ./build/seed-aarch64.by-z80
+
+      - name: Validate emitted ELF files
+        run: |
+          failures=0
+          for f in build/* seed/bin/*; do
+            [ -f "$f" ] || continue
+            [ "$(head -c 4 "$f" | od -An -tx1 | tr -d ' \n')" = 7f454c46 ] || continue
+            if ! eu-elflint -q "$f"; then
+              echo "eu-elflint failed: $f" >&2
+              failures=1
+            fi
+          done
+          [ "$failures" -eq 0 ]
