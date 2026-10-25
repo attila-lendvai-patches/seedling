@@ -1074,15 +1074,25 @@ rcx jmp_rr
 
 \ execution control
 
+\ return from computation (target-side emitter; this is what a
+\ compile mode behavior calls to emit a return into the code being compiled.
+\ Keep in sync with the `ret` assembler macro above.)
+native ret,
+C3 xliteral
+x' c, call
+ret
+
 \ end of computation
+\ `}` is the identity computation: its interpret behavior is a bare return.
+\ Its compile behavior emits that return and then fails, ending the compiling.
 native }
 ret
 
-{ c@ c, }~fail
+{ drop ret, }~fail
 
 does
 
-\ reference to identity
+\ reference to identity (the identity computation is `}`: the bare return)
 native 'id
 tos_store
 rax x' } mov_rr,aa
@@ -1500,8 +1510,7 @@ here cell+ cell+ pad length + 1+ ,
 pad s, 0 c,
 here 12 +
 literal
-C3 c,			\ ret
-}
+ret, }
 
 \ create a new variable with an initial value
 {: variable
@@ -1517,7 +1526,7 @@ dp }~ !
 {: constant
 create redefine
 literal
-C3 }~ c,		\ ret
+ret, }
 
 \ create effect with default handler
 {: effect ( x -( heap )- )

@@ -1453,15 +1453,27 @@ X3 jmp_rr
 
 \ execution control
 
+\ return from computation (target-side emitter; this is what a
+\ compile mode behavior calls to emit a return into the code being compiled.
+\ Keep in sync with the `ret` assembler macro above.)
+native ret,
+F84087F0 xliteral
+x' d, call
+D61F0200 xliteral
+x' d, call
+ret
+
 \ end of computation
+\ `}` is the identity computation: its interpret behavior is a bare return.
+\ Its compile behavior emits that return and then fails, ending the compiling.
 native }
 ret
 
-{ drop F84087F0 d, D61F0200 d, }~fail
+{ drop ret, }~fail
 
 does
 
-\ reference to identity
+\ reference to identity (the identity computation is `}`: the bare return)
 native 'id
 tos_store
 X0 x' } mov_rr,aa
@@ -1900,9 +1912,7 @@ here 3 + 3 and 3 xor allot
 here last 8 + !
 here 20 +
 literal
-F84087F0 d,
-D61F0200 d,		\ ret
-}
+ret, }
 
 \ create a new variable with an initial value
 {: variable
@@ -1919,8 +1929,7 @@ dp }~ !
 {: constant
 create redefine
 literal
-F84087F0 d,
-D61F0200 }~ d,		\ ret
+ret, }
 
 \ create effect with default handler
 {: effect ( x -( heap )- )
