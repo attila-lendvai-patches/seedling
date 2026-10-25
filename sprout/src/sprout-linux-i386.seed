@@ -2642,6 +2642,8 @@ CONTEXT edx mov_[aa],rr \ initialize context vocabulary
 CURRENT edx mov_[aa],rr \ initialize current vocabulary
 
 6 label!
+ecx 6 label mov_rr,aa
+FAIL ecx mov_[aa],rr	\ initialize failure handler
 ebx eax mov_[rr],rr	\ save TOS
 ebx push		\ save data stack ptr.
 ecx esp mov_rr,rr	\ return stack ptr. to ecx

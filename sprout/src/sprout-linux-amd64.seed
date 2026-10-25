@@ -2536,6 +2536,8 @@ CONTEXT rdx mov_[aa],rr \ initialize context vocabulary
 CURRENT rdx mov_[aa],rr \ initialize current vocabulary
 
 6 label!
+rcx 6 label mov_rr,aa
+FAIL rcx mov_[aa],rr	\ initialize failure handler
 rbx rax mov_[rr],rr	\ save TOS
 rbx push		\ save data stack ptr.
 rcx rsp mov_rr,rr	\ return stack ptr. to rcx
