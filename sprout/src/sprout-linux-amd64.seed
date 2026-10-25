@@ -777,7 +777,7 @@ f_SizeInFile field
 0 w, 1 w, 0 d,
 
 \ Alignment
-8000 q,
+1000 q,
 
 \ Section Headers
 
@@ -2583,8 +2583,6 @@ rax 30 mov_rr,x
 rax rsp add_rr,rr
 rax rax mov_rr,[rr]
 x' _sprout jmp
-
-0 q,
 
 $ dup dup
 f_SizeInFile @ w!
