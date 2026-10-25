@@ -1,0 +1,2149 @@
+output \ this must be on the first line
+
+\ This is the Seed source for aarch64 Linux
+
+\ Requirements
+\ It can be compiled by any Seed that has at least 16 bit
+\ cells and about 20 kilobytes of free RAM space available.
+
+\ Assembler
+\ This implements a very limited subset of the AArch64
+\ assembly language and is only suited for compiling
+\ code that lives in the virtual address range between
+\ 10000 and 17FFF inclusive.
+
+\ Glossary
+\ TOS: top of stack
+
+\ Imlementation
+\ X0 holds TOS, the top element of the data stack
+\ X19 points to the data stack (but top element is in X0)
+\ X3 is a scratch register
+\ SP is the call stack
+
+hex
+
+\ Auxiliary functions for the Assembler
+
+\ execute n times
+{: times ( x n -- )
+{ 0<> 1- >r dup >r execute r> r> }~self
+{ drop }~ drop
+}~|
+
+\ extract least significant 8 bits
+{: lsb		dup 8 rshift swap FF and }
+
+\ Heap manipulation words for the assembler
+\ note, that it should work on both little-endian and
+\ big-endian architectures, with various cell sizes.
+
+\ 16-bit little-endian comma
+{: w,		lsb c, c, }
+
+\ 32-bit little-endian comma
+{: d,		{ lsb c, } 3 times c, }
+
+\ 64-bit little-endian comma
+{: q,		{ lsb c, } 7 times c, }
+
+\ 64-bit virtual address comma
+{: a,		w, 1 w, 0 d, }
+
+\ 16-bit little-endian fetch
+{: w@		dup c@ swap 1+ c@ 8 lshift or }
+
+\ 16-bit little-endian store
+{: w!		dup >r 1+ >r lsb swap r> c! r> c! }
+
+\ dump the tail of the heap for outputting the result
+{: dump		here over - write drop }
+
+{: bit_size_to_mask ( bit_size -- mask )
+  1 swap lshift 1-
+}
+
+\ Offset between host and target addresses
+0 variable offset
+
+\ Assembler directives
+{: $		here offset @ - }
+{: org		here swap - offset ! }
+{: align	{ dup $ swap 1- and 0<> drop 0 c, }~self ' drop }~|
+
+\ Labels
+
+\ 16 labels must be enough
+create labels
+10 cells allot
+
+\
+\ Naming convention
+\
+\ Labels can be forward/backward, relative/absolute.
+\
+\ Backward labels: at the point when they are needed their
+\ address is already known. We just store the current address
+\ when they are defined, and read it from the label_cell when
+\ they are needed.
+\
+\ Forward labels are trickier: we store the location where the
+\ address of the future label is needed (typically as a
+\ component of a machine code instruction), and when the point
+\ is reached in the emission where we should point to, then the
+\ label-defining counterpart will emit the address (or offset)
+\ into the previously registered location. Important corollary:
+\ forward labels can only have one reference to them.
+
+\ label cell address
+{: label_cell	cells labels + }
+
+\
+\ Backward labels
+\
+
+\ Store current address into a label
+{: label	$ swap label_cell ! }
+
+\ Backward label address to stack (absolute)
+{: label@	label_cell @ }
+{: lb		label@ }
+
+\ Converts the address to a relative backward offset, divided by
+\ 4 as expected by the ISA. Then shifts the offset into position
+\ for the instruction, i.e. lshifts with low_bits bits, and
+\ clears out high_bits number of bits from the left. Fails if
+\ out of range.
+{: label_offset ( addr high_bits low_bits -- off off)
+  swap >r >r                    \ r: high_bits low_bits
+  $ -                           \ offset
+  2 rshift                      \ divided by 4
+  r> lshift                     \ left by low_bits
+  dup                           \ ds: offset, offset
+  10 rshift                     \ ds: offset, offset_high16
+  10 r> -                       \ 16 - high_bits
+  bit_size_to_mask dup >r       \ mask; saved, too
+  invert FFFF and               \ limit mask to 16 bits
+                                \ ds: offset, o_high16, mask
+  dup third and = drop \ fail if the lost part is not all 1's
+  r> and                        \ drop opcode bits from upper16
+  swap
+  \ ds: offset_high16, offset (full size, but fine for w, )
+}
+
+\ Emit a relative jump offset (backward).
+{: rlabel, ( offset_high16 offset high_opcode low_opcode -- )
+  swap >r                       \ save high_opcode
+  or w,                         \ write low
+  r> or w,                      \ write high
+}
+
+\
+\ Forward labels
+\
+
+\ Register relative offset location in the label until the
+\ future definition of the label.
+{: rlabel_f ( label -- )
+  here swap label_cell !
+}
+
+\ This properly handles >16 bit forward offsets on hosts with at
+\ least 32 bit cells, but it also doesn't fail on 16 bit hosts.
+{: label_offset_f ( place -- offset_high16 offset )
+  dup here swap - 2 rshift    \ ds: place, place, offset/4
+  swap c@ 0F and lshift       \ shift the offset into place
+  dup 10 rshift               \ ds: offset, offset_high16
+  swap
+}
+
+\ Fill in relative offset
+{: rlabel_f!
+  label@                      \ ds: place
+  dup 2 + w@ >r               \ high_opcode
+  dup 1 + c@ >r               \ low_opcode
+  dup label_offset_f          \ place, offset_high16, offset
+  r> or third w!              \ place, offset_high16
+  r> or swap 2 + w!
+}
+
+{: rlabel rlabel_f! }
+
+\ Register a 64 bit absolute forward location. Because we can
+\ only assume 16 bit words in our host, we write out the upper
+\ half of the 0x0001xxxx absolute base address, and store the
+\ location of the lower half to be emitted by our label_f!
+\ counterpart later.
+{: label_f	here swap label_cell ! 0 w, 1 w, 0 d, }
+
+\ Emit absolute forward label (only the lower 16 bits of it!)
+{: label_f!	label@ $ swap w! }
+
+\ registers
+0 constant X0
+1 constant X1
+2 constant X2
+3 constant X3
+4 constant X4
+5 constant X5
+6 constant X6
+7 constant X7
+8 constant X8
+9 constant X9
+A constant X10
+B constant X11
+C constant X12
+D constant X13
+E constant X14
+F constant X15
+10 constant X16
+11 constant X17
+12 constant X18
+13 constant X19
+14 constant X20
+15 constant X21
+16 constant X22
+17 constant X23
+18 constant X24
+19 constant X25
+1A constant X26
+1B constant X27
+1C constant X28
+1D constant X29
+1E constant X30
+1F constant SP
+1F constant XZR
+
+\ Immediate construction
+
+{: MOVZ_r,u16, ( reg imm -- )
+  swap over FFFF and 5 lshift over or D2800000 or d,
+  drop drop
+}
+
+{: MOVK_r,u16, ( reg imm -- )
+  swap over FFFF and 5 lshift over or F2A00000 or d,
+  drop drop
+}
+
+{: mov_rr,x ( reg imm -- )
+  swap
+  over FFFF and 5 lshift over or D2800000 or d,
+  over 10 rshift FFFF and 5 lshift over or F2A00000 or d,
+  over 20 rshift FFFF and 5 lshift over or F2C00000 or d,
+  over 30 rshift FFFF and 5 lshift over or F2E00000 or d,
+  drop drop
+}
+
+{: mov_rr,aa ( reg addr -- )
+  swap
+  over FFFF and 5 lshift over or D2800000 or d,
+  1 5 lshift over or F2A00000 or d,
+  drop drop
+}
+
+\ Register to register operations
+
+{: MOV_r,r, ( dst src -- )
+  10 lshift swap or AA0003E0 or d,
+}
+
+{: ADD_r,r, ( dst src -- )
+  10 lshift swap dup 5 lshift or or 8B000000 or d,
+}
+
+{: ADDS_r,r, ( dst src -- )
+  10 lshift swap dup 5 lshift or or AB000000 or d,
+}
+
+{: SUB_r,r, ( dst src -- )
+  10 lshift swap dup 5 lshift or or CB000000 or d,
+}
+
+{: SUBS_r,r, ( dst src -- )
+  10 lshift swap dup 5 lshift or or EB000000 or d,
+}
+
+{: AND_r,r, ( dst src -- )
+  10 lshift swap dup 5 lshift or or 8A000000 or d,
+}
+
+{: ORR_r,r, ( dst src -- )
+  10 lshift swap dup 5 lshift or or AA000000 or d,
+}
+
+{: ORRS_r,r, ( dst src -- )
+  10 lshift swap dup 5 lshift or or EA000000 or d,
+}
+
+{: EOR_r,r, ( dst src -- )
+  10 lshift swap dup 5 lshift or or CA000000 or d,
+}
+
+\ Register to immediate operations
+
+{: ADD_r,s, ( reg imm -- )
+  A lshift swap dup dup 5 lshift or or or 91000000 or d,
+}
+
+{: ADDS_r,s, ( reg imm -- )
+  A lshift swap dup dup 5 lshift or or or B1000000 or d,
+}
+
+{: SUB_r,s, ( reg imm -- )
+  A lshift swap dup dup 5 lshift or or or D1000000 or d,
+}
+
+{: SUBS_r,s, ( reg imm -- )
+  A lshift swap dup dup 5 lshift or or or F1000000 or d,
+}
+
+{: CMP_r,r, ( left right -- )
+  10 lshift swap 5 lshift or EB00001F or d,
+}
+
+{: CMP_r,s, ( reg imm -- )
+  A lshift swap 5 lshift or F100001F or d,
+}
+
+\ Memory operations
+
+{: LDR_r,[r], ( dst base -- )
+  5 lshift swap or F9400000 or d,
+}
+
+{: STR_r,[r], ( base src -- )
+  swap 5 lshift swap or F9000000 or d,
+}
+
+{: LDR_er,[r], ( dst base -- )
+  5 lshift swap or B9400000 or d,
+}
+
+{: STR_er,[r], ( base src -- )
+  swap 5 lshift swap or B9000000 or d,
+}
+
+{: LDR_rl,[r], ( dst base -- )
+  5 lshift swap or 39400000 or d,
+}
+
+{: STR_rl,[r], ( base src -- )
+  swap 5 lshift swap or 39000000 or d,
+}
+
+{: STRB_16,[r], ( base -- )
+  5 lshift 10 or 39000000 or d,
+}
+{: mov_from_sp ( dst -- )
+  910003E0 or d,
+}
+
+{: mov_to_sp ( src -- )
+  5 lshift 91000000 or 1F or d,
+}
+
+{: movSP,[aa] ( addr -- )
+  X16 swap mov_rr,aa X17 X16 LDR_r,[r], X17 mov_to_sp
+}
+
+{: mov_[aa],SP ( addr -- )
+  X16 swap mov_rr,aa X17 mov_from_sp X16 X17 STR_r,[r],
+}
+
+\ Basic x86-style macro names used by the rest of the source
+
+{: mov_rr,rr ( dst src -- ) MOV_r,r, }
+{: mov_rl,rl ( dst src -- ) MOV_r,r, }
+{: mov_er,er ( dst src -- ) MOV_r,r, }
+
+{: mov_[rr],rr ( base src -- ) STR_r,[r], }
+{: mov_[rr],er ( base src -- ) STR_er,[r], }
+{: mov_[rr],rl ( base src -- ) STR_rl,[r], }
+{: mov_er,[rr] ( dst base -- ) LDR_er,[r], }
+{: mov_rl,[rr] ( dst base -- ) LDR_rl,[r], }
+{: mov_rr,[rr] ( dst base -- ) LDR_r,[r], }
+
+{: mov_byte_[rr],x ( base imm -- )
+  swap >r X16 swap MOVZ_r,u16, r> STRB_16,[r],
+}
+
+{: mov_[aa],rr ( addr src -- )
+  >r X16 swap mov_rr,aa r> X16 swap mov_[rr],rr
+}
+
+{: mov_[aa],rl ( addr src -- )
+  >r X16 swap mov_rr,aa r> X16 swap mov_[rr],rl
+}
+
+{: mov_rl,[aa] ( dst addr -- )
+  X16 swap mov_rr,aa X16 LDR_rl,[r],
+}
+
+{: mov_rr,[aa] ( dst addr -- )
+  X16 swap mov_rr,aa X16 LDR_r,[r],
+}
+
+{: add_rr,rr ( dst src -- ) ADD_r,r, }
+{: add_rr,s ( reg imm -- ) ADD_r,s, }
+{: add_rr,[aa] ( reg addr -- )
+  swap >r X16 swap mov_rr,aa X16 X16 LDR_r,[r], r> X16 ADD_r,r,
+}
+{: sub_rr,s ( reg imm -- ) SUB_r,s, }
+{: sub_rr,rr ( dst src -- ) SUB_r,r, }
+{: sbb_rr,rr ( dst src -- )
+  10 lshift swap dup 5 lshift or or DA000000 or d,
+}
+{: adds_rr,rr ( dst src -- ) ADDS_r,r, }
+{: adds_rr,s ( reg imm -- ) ADDS_r,s, }
+{: subs_rr,rr ( dst src -- ) SUBS_r,r, }
+{: subs_rr,s ( reg imm -- ) SUBS_r,s, }
+{: cmp_rr,s ( reg imm -- ) CMP_r,s, }
+{: cmp_rr,rr ( left right -- ) CMP_r,r, }
+{: cmp_rr,[rr] ( left base -- )
+  swap >r X16 swap LDR_r,[r], r> X16 CMP_r,r,
+}
+{: cmp_rl,[rr] ( reg base -- )
+  swap >r X16 swap LDR_rl,[r], r> X16 CMP_r,r,
+}
+{: and_rr,rr ( dst src -- ) AND_r,r, }
+{: or_rr,rr ( dst src -- ) ORR_r,r, }
+{: xor_rr,rr ( dst src -- ) EOR_r,r, }
+
+{: set_carry_add 9A9F37F2 d, }
+{: set_carry_sub 9A9F27F2 d, }
+{: set_carry_ne 9A9F07F2 d, }
+
+{: SVC D4000001 d, }
+{: int_x SVC }
+
+{: push ( reg -- ) 1F8FE0 or F81F8C00 or d, }
+{: pop ( reg -- ) F84087E0 or d, }
+
+\ Branch instructions
+
+{: B.   ( addr  -- ) 6 0 label_offset 1400 0 rlabel, }
+{: BL   ( addr  -- ) 6 0 label_offset 9400 0 rlabel, }
+
+{: cond_jump_instr
+  8 5 label_offset 5400
+}
+
+{: B.EQ ( addr -- ) cond_jump_instr 0 rlabel, }
+{: B.NE ( addr -- ) cond_jump_instr 1 rlabel, }
+{: B.HS ( addr -- ) cond_jump_instr 2 rlabel, }
+{: B.LO ( addr -- ) cond_jump_instr 3 rlabel, }
+{: B.MI ( addr -- ) cond_jump_instr 4 rlabel, }
+{: B.PL ( addr -- ) cond_jump_instr 5 rlabel, }
+{: B.VS ( addr -- ) cond_jump_instr 6 rlabel, }
+{: B.VC ( addr -- ) cond_jump_instr 7 rlabel, }
+{: B.HI ( addr -- ) cond_jump_instr 8 rlabel, }
+{: B.LS ( addr -- ) cond_jump_instr 9 rlabel, }
+{: B.GE ( addr -- ) cond_jump_instr A rlabel, }
+{: B.LT ( addr -- ) cond_jump_instr B rlabel, }
+{: B.GT ( addr -- ) cond_jump_instr C rlabel, }
+{: B.LE ( addr -- ) cond_jump_instr D rlabel, }
+
+{: B._f   ( label -- ) rlabel_f A0 c, 0 c, 1400 w, }
+{: BL_f   ( label -- ) rlabel_f A0 c, 0 c, 9400 w, }
+
+{: cond_jump_instr_f, ( high_low_bits low_opcode -- )
+  A5 c, c, 5400 w,
+}
+
+{: B.EQ_f ( label -- ) rlabel_f 0 cond_jump_instr_f, }
+{: B.NE_f ( label -- ) rlabel_f 1 cond_jump_instr_f, }
+{: B.HS_f ( label -- ) rlabel_f 2 cond_jump_instr_f, }
+{: B.LO_f ( label -- ) rlabel_f 3 cond_jump_instr_f, }
+{: B.MI_f ( label -- ) rlabel_f 4 cond_jump_instr_f, }
+{: B.PL_f ( label -- ) rlabel_f 5 cond_jump_instr_f, }
+{: B.HI_f ( label -- ) rlabel_f 8 cond_jump_instr_f, }
+{: B.LS_f ( label -- ) rlabel_f 9 cond_jump_instr_f, }
+{: B.GE_f ( label -- ) rlabel_f A cond_jump_instr_f, }
+{: B.LT_f ( label -- ) rlabel_f B cond_jump_instr_f, }
+{: B.GT_f ( label -- ) rlabel_f C cond_jump_instr_f, }
+{: B.LE_f ( label -- ) rlabel_f D cond_jump_instr_f, }
+
+\ x86-style branch names
+
+{: call ( addr -- )
+  $ 10 + 10000 + X16 swap mov_rr,aa
+  X16 push
+  B.
+}
+{: call_f ( label -- )
+  $ 10 + 10000 + X16 swap mov_rr,aa
+  X16 push
+  B._f
+}
+{: call_rr ( reg -- )
+  $ 10 + 10000 + X16 swap mov_rr,aa
+  X16 push
+  5 lshift D61F0000 or d,
+}
+{: jmp ( addr -- ) B. }
+{: jmp_s ( addr -- ) B. }
+{: jmp_f ( label -- ) B._f }
+{: jmp_rr ( reg -- ) 5 lshift D61F0000 or d, }
+{: jmp_[aa] ( addr -- )
+  58000070 d, F9400210 d, D61F0200 d, a,
+}
+
+{: jc ( addr -- ) X18 0 cmp_rr,s B.NE }
+{: jnc ( addr -- ) X18 0 cmp_rr,s B.EQ }
+{: jz ( addr -- ) B.EQ }
+{: jnz ( addr -- ) B.NE }
+{: jb ( addr -- ) B.LO }
+{: jae ( addr -- ) B.HS }
+{: jbe ( addr -- ) B.LS }
+{: ja ( addr -- ) B.HI }
+{: js ( addr -- ) B.MI }
+{: jns ( addr -- ) B.PL }
+{: jl ( addr -- ) B.LT }
+{: jge ( addr -- ) B.GE }
+{: jle ( addr -- ) B.LE }
+{: jg ( addr -- ) B.GT }
+
+{: jc_s ( addr -- ) X18 0 cmp_rr,s B.NE }
+{: jnc_s ( addr -- ) X18 0 cmp_rr,s B.EQ }
+{: jz_s ( addr -- ) B.EQ }
+{: jnz_s ( addr -- ) B.NE }
+{: jbe_s ( addr -- ) B.LS }
+{: ja_s ( addr -- ) B.HI }
+{: js_s ( addr -- ) B.MI }
+{: jns_s ( addr -- ) B.PL }
+
+{: jc_fs ( label -- ) X18 0 cmp_rr,s B.NE_f }
+{: jnc_fs ( label -- ) X18 0 cmp_rr,s B.EQ_f }
+{: jz_fs ( label -- ) B.EQ_f }
+{: jnz_fs ( label -- ) B.NE_f }
+{: js_fs ( label -- ) B.MI_f }
+{: jns_fs ( label -- ) B.PL_f }
+{: jae_fs ( label -- ) B.HS_f }
+{: jb_fs ( label -- ) B.LO_f }
+{: jbe_fs ( label -- ) B.LS_f }
+{: ja_fs ( label -- ) B.HI_f }
+
+{: ret X16 pop X16 jmp_rr }
+{: inc_rr ( reg -- ) 1 ADD_r,s, }
+{: dec_rr ( reg -- ) 1 SUB_r,s, }
+{: clc X18 0 mov_rr,x }
+{: stc X18 1 mov_rr,x }
+{: cld }
+{: std }
+
+\ Shift instructions
+
+{: shl_rr,s ( reg imm -- )
+  dup 3F swap - A lshift >r
+  0 swap - 3F and 10 lshift r> or
+  over dup 5 lshift or or D3400000 or d, drop
+}
+
+{: shr_rr,s ( reg imm -- )
+  dup 10 lshift >r
+  drop
+  3F A lshift r> or
+  over dup 5 lshift or or D3400000 or d, drop
+}
+
+{: shl_rr,cl ( reg -- )
+  dup 5 lshift or 30000 or 9AC02000 or d,
+}
+
+{: shr_rr,cl ( reg -- )
+  dup 5 lshift or 30000 or 9AC02400 or d,
+}
+
+{: sar_rr,cl ( reg -- )
+  dup 5 lshift or 30000 or 9AC02800 or d,
+}
+
+{: rcr_rr,1 ( reg -- )
+  dup dup 5 lshift or over 10 lshift 6 lshift or 93C00400 or d, drop
+}
+
+{: rep_movsq }
+{: rep_movsb }
+
+{: cmpsb
+  X16 X1 LDR_rl,[r],
+  X17 X5 LDR_rl,[r],
+  X16 X17 CMP_r,r,
+  X1 1 add_rr,s
+  X5 1 add_rr,s
+}
+
+{: mul_rr ( reg -- )
+  X16 X0 MOV_r,r,
+  dup 10 lshift 200 or 9B007C00 or d,
+  10 lshift 200 or 2 or 9BC07C00 or d,
+}
+
+{: div_rr ( reg -- )
+  dup 10 lshift 10 or 9AC00800 or d,
+  10 lshift 200 or 2 or 9B008000 or d,
+  X0 X16 MOV_r,r,
+}
+
+{: idiv_rr ( reg -- )
+  dup 10 lshift 10 or 9AC00C00 or d,
+  10 lshift 200 or 2 or 9B008000 or d,
+  X0 X16 MOV_r,r,
+}
+
+{: not_rr AA2003E0 d, }
+{: neg_rr CB0003E0 d, }
+
+\ syscall
+
+3F constant sys.read
+40 constant sys.write
+38 constant sys.open
+39 constant sys.close
+E2 constant sys.mprotect
+D6 constant sys.brk
+DC constant sys.clone
+DD constant sys.execve
+5D constant sys.exit
+
+{: syscall ( n -- )
+  X8 swap mov_rr,x
+  X0 X5 MOV_r,r,
+  SVC
+}
+
+\ Cross Compilation
+\ The Seed language cannot be directly cross-compiled,
+\ because the compile mode behavior of the newly defined
+\ words cannot be executed on the host architecture.
+\ However, there is only a handful of words with compile
+\ mode behavior that differs from default, so we can
+\ write those behaviors in host Seed and look them up from
+\ an association list.
+
+\ assembler macros
+
+{: tos_load             \ top of data stack -> X0
+X19 8 sub_rr,s
+X0 X19 mov_rr,[rr]
+}
+
+{: tos_store            \ X0 -> data stack
+X19 X0 mov_[rr],rr
+X19 8 add_rr,s
+}
+
+{: binary
+X3 X0 mov_rr,rr
+tos_load
+}
+
+{: binary_cmp
+binary
+X0 X3 cmp_rr,rr
+}
+
+\ pointer to cross-compiled vocabulary
+create xcurrent 0 w,
+
+{: xlink ( a -- a )
+8 align
+{ 0<> $ swap }~ a,
+{ $ swap }~ q,
+}~|
+
+{: xlast ( -- a )
+xcurrent }~ w@
+
+{: xtraverse& ( a -( fail pend )- a )
+w@ 0<>
+offset @ +
+'self &
+dup
+8 +
+}
+
+{: xsearch ( a -( pad fail )- a )
+xtraverse& 10 +
+pad s= cut }~ nip
+
+{: xfind ( -( pad fail )- a )
+xcurrent xsearch 10 }~ -
+
+\ target tick
+{: x'
+word xfind }~ w@
+
+\ target pointer to callcomp
+0 variable callcomp
+
+\ target pointer to endcomp
+0 variable endcomp
+
+\ target pointer to execute
+0 variable exec
+
+\ target create
+{: xcreate
+xlast
+xlink
+xcurrent w!
+here
+0 a,
+callcomp @
+a,
+word
+pad
+s,
+0 c,
+4 align
+$ swap w!
+}
+
+\ target literal
+{: xliteral ( x -( heap )- )
+4 align
+tos_store
+X0 swap mov_rr,x
+}
+
+\ target address literal
+{: xaliteral ( a -( heap )- )
+tos_store
+X0 swap mov_rr,aa
+}
+
+{: x{{ ( -( heap )- a )
+4 align
+$ 10 + 10000 + X16 swap mov_rr,aa
+X16 push
+14000000 d,
+}~ here
+
+{: x}} ( a -( heap )- )
+4 align
+dup here swap - 4 + 2 rshift 3FFFFFF and 14000000 or swap 4 - d!
+tos_store
+X0 pop
+}
+
+\ create association
+{: assoc ( key value table -( heap )- )
+dup @ link swap !
+swap , , }
+
+\ recall association
+{: recall ( key table -- value )
+traverse& @ third s= cut drop nip cell+ cell+ @ }
+
+\ compile tail call to self
+{: tail jmp }~fail
+
+\ target host associations
+0 variable xcomps
+
+\ Compile mode behaviors for ends of computation
+
+" }"		{ drop ret }~fail	xcomps assoc
+" }~"		{ drop word xfind
+		w@ jmp }~fail		xcomps assoc
+" }~fail"	' tail			xcomps assoc
+" }~|"		' tail			xcomps assoc
+" }~self"	{ drop dup
+		offset @ - jmp }~fail	xcomps assoc
+" 'id}~|"	' tail			xcomps assoc
+
+\ comments
+
+" \\"		{ drop }~ \		xcomps assoc
+" ("		{ drop }~ (		xcomps assoc
+
+\ unnamed macros
+
+" ["		{ drop ' interpret
+		'id}~|			xcomps assoc
+
+
+\ literal constructors
+
+" ascii"	{ drop word pad
+		c@ xliteral }		xcomps assoc
+" '"		{ drop word xfind
+		w@ xaliteral }		xcomps assoc
+" 'self"	{ drop dup
+		offset @ - xaliteral }	xcomps assoc
+
+\ while loop
+{: while
+>r \ subject on return stack
+dup >r \ predicate on return stack
+\ predicate on data stack
+{ r>drop r>drop r>drop } |
+r> \ predicate on data stack
+r> \ subject on data stack
+swap
+>r \ predicate on return stack
+dup >r \ subject on return stack
+execute \ execute subject
+r> \ subject on data stack
+r> \ predicate on data stack
+swap }~self
+
+\ The cross-compiler
+{: xcompile
+word
+{ pad c@ 0= drop }
+{ input word }
+while
+{ xfind w@
+  { pad xcomps recall }
+  { ' call }
+}~|
+{ pad s>number ' xliteral }
+|
+execute
+}~self
+
+\ cross string literal
+{: xlits
+bite
+drop
+{ bite ascii " <>
+        { ascii \ = drop ' bite { A } }~|
+        'id| c,
+}~self
+{ 0 }~ c,
+4 align
+}~|
+
+
+\ quoted literals
+" {"		{ drop 
+		x{{ ' xcompile 'id | }~ x}}	xcomps assoc
+" \""		{ drop x{{ xlits }~ x}}		xcomps assoc
+
+\ Offsets in ELF header
+
+0 variable headersLength
+0 variable f_EntryPoint
+0 variable f_ProgramHeaders
+0 variable f_SizeInFile
+
+{: 0c, 0 c, }
+
+{: field here swap ! }
+
+\ system variables
+18000 constant SEED
+18008 constant DP
+18010 constant TIB
+18018 constant FAIL
+18020 constant ERR_SP
+18028 constant DICTIONARY
+18030 constant BASE
+18031 constant EMIT_BUF
+18032 constant PAD
+   20 constant PAD_LEN
+18052 constant TIB_BUF
+  100 constant TIB_BUF_LEN
+
+18158 constant EFFECTS
+
+\ effect pointer for cross-compiling
+EFFECTS variable effects
+
+\ native word definition
+{: native
+xcreate
+}
+
+\ postpone colon definition
+{: postpone
+native
+14000000 d,
+}
+
+\ effect definition
+{: effect ( -- )
+native
+effects @ dup 8 + effects !
+jmp_[aa]
+}
+
+\ constant definition
+{: constant
+native
+tos_store
+X0 swap mov_rr,x
+ret
+}
+
+\ address definition (because of 16-bit cells)
+{: address
+native
+tos_store
+X0 swap mov_rr,aa
+ret
+}
+
+\ change compile mode behavior
+{: does
+xlast
+10 +
+offset @ +
+w! }
+
+{: immediate
+exec @ }~ does
+
+\ alias
+{: alias
+xcreate
+word
+xfind
+dup
+w@ \ interpret mode behavior
+swap
+8 +
+w@ \ compile mode behavior
+does
+xlast
+8 +
+offset @ +
+w! }
+
+\ target quotation
+{: {
+$ ' xcompile 'id}~|
+
+\ postponed colon definition
+{: {::
+word xfind w@ offset @ +
+dup 4 +
+here 4 + swap -
+2 rshift 3FFFFFF and 14000000 or
+swap d!
+$ ' xcompile 'id|
+}~ drop
+
+\ colon definitions
+{: {:
+native
+here
+' xcompile
+' drop
+}~|
+
+
+\ Beginning of cross-compilation
+create ELF
+
+0 org
+
+\ Signature
+7F c, ascii E c, ascii L c, ascii F c,
+
+\ Class 2, 64-bit
+2 c,
+
+\ Little-endian
+1 c,
+
+\ ELF version
+1 c,
+
+\ OS ABI
+0c,
+
+\ Extended ABI
+0 q,
+
+\ e_type: Elf file type (ET_EXEC = 2, executable)
+2 w,
+
+\ e_machine: Target architecture (EM_AARCH64 = 183 = 0xb7, aarch64)
+B7 w,
+
+\ e_version: Additional ELF version
+1 d,
+
+\ e_entry: Entry point, lower 16 bits
+f_EntryPoint field
+\ and the remaining 48 bits; the virtual address is 0x001xxxx
+0 w, 1 w, 0 d,
+
+\ e_phoff: file offset of the program headers
+f_ProgramHeaders field
+0 q,
+
+\ e_shoff: file offset of the section headers
+0 q,
+
+\ e_flags: unused
+0 d,
+
+\ e_ehsize: size of this elf header (struct ELF64_Ehdr)
+40 w,
+
+\ e_phentsize: size of program header entry
+38 w,
+
+\ e_phnum: Number of program header entries
+1 w,
+
+\ e_shentsize: Section header entry size
+0 w,
+
+\ e_shnum: Number of section header entries
+0 w,
+
+\ e_shstrndx: Index of string table section
+0 w,
+
+\
+\ Program Headers
+\
+
+$ f_ProgramHeaders @ w!
+
+\ p_type: program header type (PT_LOAD = 1)
+1 d,
+
+\ p_flags: program header flags: 7 = read + write + execute
+7 d,
+
+\ p_offset: loadable segment offset in the file
+0 q,
+
+\ p_vaddr: Virtual address, i.e. 10000
+0 w, 1 w, 0 d,
+
+\ p_paddr: Physical address (ignored)
+0 w, 1 w, 0 d,
+
+\ p_filesz: size in file
+f_SizeInFile field
+0 q,
+
+\ p_memsz: size in memory
+0 w, 1 w, 0 d,
+
+\ p_align: alignment
+1000 q,
+
+\
+\ Emit the machine code
+\
+
+$ f_EntryPoint @ w!
+
+7 jmp_f \ jump over the initial dictionary
+
+0 label \ get heap top
+sys.brk syscall
+ret
+
+1 label \ low-level heap allocation of X3 bytes
+X0 push
+X19 push
+X3 push
+X5 0 mov_rr,x
+0 lb call
+X3 pop
+X3 DP add_rr,[aa]
+X0 X3 cmp_rr,rr
+2 jae_fs
+X5 X3 mov_rr,rr
+0 lb call
+X5 DICTIONARY mov_rr,[aa] \ beginning of heap
+X0 X5 sub_rr,rr	\ calculate length of heap
+X1 X0 mov_rr,rr	\ move length to X1
+X2 7 mov_rr,x		\ PROT_READ + PROT_WRITE + PROT_EXEC
+sys.mprotect syscall
+2 rlabel
+X19 pop
+X0 pop
+ret
+
+native callcomp
+$ callcomp !
+X3 4 mov_rr,x
+1 lb call
+X3 DP mov_rr,[aa]
+X16 10000070 mov_rr,x
+X3 X16 mov_[rr],er
+X3 4 add_rr,s
+DP X3 mov_[aa],rr
+X3 4 mov_rr,x
+1 lb call
+X3 DP mov_rr,[aa]
+X16 F81F8FF0 mov_rr,x
+X3 X16 mov_[rr],er
+X3 4 add_rr,s
+DP X3 mov_[aa],rr
+X3 4 mov_rr,x
+1 lb call
+X3 DP mov_rr,[aa]
+X16 X0 mov_rr,rr
+X16 X3 sub_rr,rr
+X16 2 shr_rr,s
+X17 3FFFFFF mov_rr,x
+X16 X17 and_rr,rr
+X17 14000000 mov_rr,x
+X16 X17 or_rr,rr
+X3 X16 mov_[rr],er
+X3 4 add_rr,s
+DP X3 mov_[aa],rr
+tos_load
+ret
+
+x' callcomp does
+
+native tailcomp
+X3 4 mov_rr,x
+1 lb call
+X3 DP mov_rr,[aa]
+X16 X0 mov_rr,rr
+X16 X3 sub_rr,rr
+X16 2 shr_rr,s
+X17 3FFFFFF mov_rr,x
+X16 X17 and_rr,rr
+X17 14000000 mov_rr,x
+X16 X17 or_rr,rr
+X3 X16 mov_[rr],er
+X3 4 add_rr,s
+DP X3 mov_[aa],rr
+tos_load
+ret
+
+native endcomp
+$ endcomp !
+x' tailcomp call
+2 jmp_f
+
+native }~fail
+2 rlabel
+2 label
+X3 FAIL mov_rr,aa
+3 label
+SP ERR_SP movSP,[aa]	\ restore SP
+X2 pop			\ handler pointer in X2
+X3 X2 cmp_rr,rr	\ compare with current effect's
+X19 pop			\ X19 = previous handler address
+X0 X2 mov_rr,[rr]
+X2 X19 mov_[rr],rr	\ restore previous handler address
+X19 X0 mov_rr,rr	\ X19 = current handler address
+X0 pop			\ X0 = previous ERR_SP
+ERR_SP X0 mov_[aa],rr	\ restore previous ERR_SP
+3 lb jnz_s		\ next handler, if not found
+X3 X19 mov_rr,rr	\ X3 = current handler address
+X19 pop			\ restore data stack pointer
+X0 X19 mov_rr,[rr]	\ restore TOS
+X3 jmp_rr		\ continue with handler
+
+x' endcomp does
+
+native carry?
+2 lb jc
+ret
+
+\ arithmetic filters
+
+native 0=
+X0 0 cmp_rr,s
+2 lb jnz
+ret
+
+native 0<>
+X0 0 cmp_rr,s
+2 lb jz
+ret
+
+\ relations
+
+native =
+binary_cmp
+2 lb jnz
+ret
+
+native <>
+binary_cmp
+2 lb jz
+ret
+
+native u>
+binary_cmp
+2 lb jbe
+ret
+
+native u>=
+binary_cmp
+2 lb jb
+ret
+
+native u<
+binary_cmp
+2 lb jae
+ret
+
+native u<=
+binary_cmp
+2 lb ja
+ret
+
+\ compare strings for equality
+3 label
+X1 X0 mov_rr,rr
+tos_load
+X5 X0 mov_rr,rr
+X3 X3 xor_rr,rr
+4 label
+X3 X1 cmp_rl,[rr]
+5 jz_fs
+X3 X5 cmp_rl,[rr]
+6 jz_fs
+cmpsb
+4 lb jz_s
+6 rlabel
+stc
+ret
+5 rlabel
+X3 X5 cmp_rl,[rr]
+set_carry_ne
+ret
+
+native s=
+3 lb call
+2 lb jc
+ret
+
+native s<>
+3 lb call
+2 lb jnc
+ret
+
+\ heap manipulation
+
+DP address dp
+
+native dictionary
+tos_store
+X0 DICTIONARY mov_rr,[aa]
+ret
+
+native here
+tos_store
+X0 DP mov_rr,[aa]
+ret
+
+native ,
+X3 8 mov_rr,x
+1 lb call
+X3 DP mov_rr,[aa]
+X3 X0 mov_[rr],rr
+X3 8 add_rr,s
+DP X3 mov_[aa],rr
+tos_load
+ret
+
+native d,
+X3 4 mov_rr,x
+1 lb call
+X3 DP mov_rr,[aa]
+X3 X0 mov_[rr],er
+X3 4 add_rr,s
+DP X3 mov_[aa],rr
+tos_load
+ret
+
+native c,
+X3 1 mov_rr,x
+1 lb call
+X3 DP mov_rr,[aa]
+X3 X0 mov_[rr],rl
+X3 inc_rr
+DP X3 mov_[aa],rr
+tos_load
+ret
+
+native @
+X0 X0 mov_rr,[rr]
+ret
+
+native d@
+X3 X0 mov_er,[rr]
+X0 X0 xor_rr,rr
+X0 X3 mov_er,er
+ret
+
+native c@
+X3 X0 mov_rl,[rr]
+X0 X0 xor_rr,rr
+X0 X3 mov_rl,rl
+ret
+
+native !
+binary
+X3 X0 mov_[rr],rr
+tos_load
+ret
+
+native d!
+binary
+X3 X0 mov_[rr],er
+tos_load
+ret
+
+native c!
+binary
+X3 X0 mov_[rr],rl
+tos_load
+ret
+
+native allot
+binary
+X3 push
+1 lb call
+X3 pop
+X3 DP add_rr,[aa]
+DP X3 mov_[aa],rr
+ret
+
+\ end Seed execution
+
+native bye
+X5 0 mov_rr,x
+sys.exit syscall
+
+\ constnats
+TIB address tib
+PAD address pad
+
+\ I/O effects
+
+native stdemit
+EMIT_BUF X0 mov_[aa],rl
+tos_load
+X0 push
+X19 push
+X5 1 mov_rr,x
+X1 EMIT_BUF mov_rr,aa
+X2 1 mov_rr,x
+sys.write syscall
+X0 1 cmp_rr,s
+X19 pop
+X0 pop
+2 lb jnz
+ret
+
+effect emit ( -( emit fail )- )
+
+native stdwrite
+binary
+X19 push
+X1 X0 mov_rr,rr \ buffer
+X2 X3 mov_rr,rr \ length
+X5 1 mov_rr,x \ stdout
+sys.write syscall
+X19 pop
+ret
+
+effect write ( -( write )- )
+
+native stdkey
+X0 push
+X19 push
+X5 0 mov_rr,x
+X1 EMIT_BUF mov_rr,aa
+X2 1 mov_rr,x
+sys.read syscall
+X0 X0 or_rr,rr
+X19 pop
+X0 pop
+2 lb jz
+tos_store
+X0 X0 xor_rr,rr
+X0 EMIT_BUF mov_rl,[aa]
+ret
+
+effect key ( -( key fail )- c )
+
+\ edit a line of text on stdin (quick and dirty)
+native stdinput
+X0 push
+X19 push
+X1 TIB_BUF mov_rr,aa
+TIB X1 mov_[aa],rr
+3 label
+X1 push
+X5 0 mov_rr,x
+X2 1 mov_rr,x
+sys.read syscall
+X1 pop
+X0 1 cmp_rr,s
+4 jnz_fs 
+X0 X1 mov_rl,[rr]
+X0 A cmp_rr,s
+5 jz_fs
+X1 inc_rr
+X3 TIB_BUF TIB_BUF_LEN + 1+ mov_rr,aa
+X1 X3 cmp_rr,rr
+3 lb jnz_s
+4 rlabel
+5 rlabel
+X1 0 mov_byte_[rr],x
+X19 pop
+X0 pop
+ret
+
+effect input
+
+\ stack manipulation primitives
+
+native drop
+X19 8 sub_rr,s
+X0 X19 mov_rr,[rr]
+ret
+
+native nip
+X19 8 sub_rr,s
+ret
+
+native swap
+binary
+X19 X3 mov_[rr],rr
+X19 8 add_rr,s
+ret
+
+native dup
+tos_store
+ret
+
+native over
+binary
+X19 8 add_rr,s
+X19 X3 mov_[rr],rr
+X19 8 add_rr,s
+ret
+
+native third
+X3 X19 mov_rr,rr
+tos_store
+X3 10 sub_rr,s
+X0 X3 mov_rr,[rr]
+ret
+
+native >r
+binary
+X2 pop
+X3 push
+X2 jmp_rr
+
+native r>
+tos_store
+X3 pop
+X0 pop
+X3 jmp_rr
+
+native r>drop
+X3 pop
+X2 pop
+X3 jmp_rr
+
+\ execution control
+
+\ end of computation
+native }
+ret
+
+{ drop F84087F0 d, D61F0200 d, }~fail
+
+does
+
+\ reference to identity
+native 'id
+tos_store
+X0 x' } mov_rr,aa
+ret
+
+\ execute computation
+native execute
+$ exec !
+binary
+X3 jmp_rr
+
+\ handle effect
+native handle
+binary			\ effect reference in X3
+X3 C add_rr,s
+X2 X3 mov_rr,[rr]	\ handler pointer in X2
+3 label
+X19 10 sub_rr,s		\ data stack pointer to be saved
+X19 push		\ save data stack pointer
+X19 10 add_rr,s		\ current data stack pointer
+X3 ERR_SP mov_rr,[aa]	\ ERR_SP in X3
+X3 push		\ save previous ERR_SP
+X3 X2 mov_rr,[rr]	\ previous handler address in X3
+X3 push		\ save previous handler address
+X2 push		\ save handler pointer
+ERR_SP mov_[aa],SP  \ set new ERR_SP
+binary			\ handler reference in X3
+X2 X3 mov_[rr],rr	\ handler reference changed
+x' execute call		\ execute code with effects
+SP ERR_SP movSP,[aa]	\ stack to handler frame
+X3 pop			\ handler ptr in X3
+X2 pop			\ previous handler addr. in X2
+X3 X2 mov_[rr],rr	\ restore handler
+X3 pop
+ERR_SP X3 mov_[aa],rr	\ restore ERR_SP
+SP 8 add_rr,s		\ discard data stack pointer
+ret
+
+\ disjunction combinator
+native |
+X2 FAIL mov_rr,aa
+3 lb jmp
+
+\ tail disjunction
+alias }~| |
+
+x' endcomp does
+
+\ disjunction with identity
+native 'id|
+x' 'id call
+x' | jmp
+
+\ tail disjunction with identity
+alias 'id}~| 'id|
+
+x' endcomp does
+
+\ cut handler
+native cut
+X5 ERR_SP mov_rr,[aa]
+X3 X5 mov_rr,[rr]	\ handler ptr in X3
+X5 8 add_rr,s
+X2 X5 mov_rr,[rr]	\ previous handler reference in X2
+X5 8 add_rr,s
+X3 X2 mov_[rr],rr	\ restore previous handler
+X3 X5 mov_rr,[rr]	\ previous ERR_SP in X3
+ERR_SP X3 mov_[aa],rr	\ restore previous ERR_SP
+ret
+
+\ pend
+native &
+X1 pop			\ return address in X1
+binary			\ failure handler in X3
+X19 push		\ save data stack pointer
+X2 ERR_SP mov_rr,[aa]	\ previous ERR_SP in X2
+X2 push		\ save previous ERR_SP
+X2 FAIL mov_rr,[aa]	\ previous handler in X2
+X2 push		\ save previous handler
+X2 FAIL mov_rr,aa
+X2 push		\ save failure handler pointer
+X2 X3	mov_[rr],rr	\ set new handler
+ERR_SP mov_[aa],SP	\ set new ERR_SP
+X3 18 mov_rr,x		\ frame offset
+X16 mov_from_sp
+X3 X16 add_rr,rr	\ add stack pointer
+3 label
+X3 push
+X1 call_rr		\ call what follows
+X3 pop
+X3 8 add_rr,s
+X1 X3 mov_rr,[rr]
+3 lb jmp
+
+\ arithmetic mappers
+
+native 1-
+X0 1 subs_rr,s
+set_carry_sub
+ret
+
+native 1+
+X0 1 adds_rr,s
+set_carry_add
+ret
+
+native cell-
+X0 8 sub_rr,s
+ret
+
+native cell+
+X0 8 add_rr,s
+ret
+
+native cells
+X0 3 shl_rr,s
+ret
+
+\ binary arithmetic primitives
+
+native +
+binary
+X0 X3 adds_rr,rr
+set_carry_add
+ret
+
+native -
+binary
+X0 X3 subs_rr,rr
+set_carry_sub
+ret
+
+native u* ( n n -- l h )
+binary
+X3 mul_rr
+tos_store
+X0 X2 mov_rr,rr
+ret
+
+native u/mod ( n n -- n n )
+binary
+X2 X2 xor_rr,rr
+X3 div_rr
+X19 X2 mov_[rr],rr
+X19 8 add_rr,s
+ret
+
+\ bitwise primitives
+
+native and
+binary
+X0 X3 and_rr,rr
+ret
+
+native or
+binary
+X0 X3 or_rr,rr
+ret
+
+native xor
+binary
+X0 X3 xor_rr,rr
+ret
+
+native invert
+X0 not_rr
+ret
+
+3 label
+X0 X0 xor_rr,rr
+ret
+
+native lshift
+binary
+X3 3F cmp_rr,s
+3 lb jae
+X0 shl_rr,cl
+ret
+
+native rshift
+binary
+X3 3F cmp_rr,s
+3 lb jae
+X0 shr_rr,cl
+ret
+
+\ tail call
+
+postpone word
+
+postpone find
+
+native }~
+2 lb jmp \ not permitted in interpret mode
+
+{ drop word find drop endcomp } does
+
+\ prelude compiler (no prelude in Linux aarch64)
+{: vm, }
+
+x' drop does
+
+\ literal constructors
+
+{: literal
+here 3 + 3 and 3 xor allot
+F9000260 d,
+91002273 d,
+dup FFFF and 5 lshift D2800000 or d,
+dup 10 rshift FFFF and 5 lshift F2A00000 or d,
+dup 20 rshift FFFF and 5 lshift F2C00000 or d,
+30 rshift FFFF and 5 lshift F2E00000 or d,
+}
+
+{: >lit execute }~ literal
+
+{: ascii word pad }~ c@
+
+x' >lit does
+
+{: ' word find }~ drop
+
+x' >lit does
+
+{: {{
+here 3 + 3 and 3 xor allot
+here 10 + dup FFFF and 5 lshift 10 or D2800000 or d,
+10 rshift FFFF and 5 lshift 10 or F2A00000 or d,
+F81F8FF0 d,
+14000000 }~ d,
+
+\ Close a quotation. Its body lives inline in the code stream and may end
+\ with arbitrary-length data (e.g. a string literal), so align to 4 bytes
+\ before patching the branch and emitting the continuation: AArch64
+\ instructions, and thus branch targets and displacements, are 4-byte units.
+{: }}
+here 3 + 3 and 3 xor allot
+dup here swap - 4 + 2 rshift 3FFFFFF and 14000000 or swap 4 - d!
+F9000260 d,
+91002273 d,
+F84087E0 d,
+}
+
+\ self references
+
+\ tail call to self
+native }~self
+2 lb jmp \ not permitted in interpret mode
+
+{ drop dup here - 2 rshift 3FFFFFF and 14000000 or d, }~fail
+
+does
+
+\ self reference
+native 'self
+2 lb jmp \ not permitted in interpret mode
+
+{ drop dup }~ literal
+does
+
+postpone compile
+
+\ quotation
+
+{: quotate {{ execute }~ }}
+
+{: { here 3 + 3 and 3 xor allot here ' compile 'id}~|
+
+x' quotate does
+
+\ quoted string literal
+
+{: bite
+tib @ dup c@ 0<> swap 1+ tib }~ !
+
+{: "
+here bite drop
+{ bite ascii " <>
+{ ascii \ = drop ' bite { A } }~|
+'id|
+c,
+}~self
+{ 0 }~ c,
+}~|
+
+x' quotate does
+
+\ comments
+
+\ skip the rest of the line
+{: \ 0 tib @ }~ c!
+
+immediate
+
+\ skip till the matching closing paren
+{: ( { word pad " )" s<> " " s<>
+{ " (" }~ s<> ' ( |
+drop }~self 'id}~|
+
+immediate
+
+\ character filters
+
+\ ascii code of space (a.k.a. blank)
+bl constant bl
+
+\ check whitespace
+{: ws
+bl }~ u<=
+
+\ check printable
+{: printable
+ascii ! u>= ascii ~ }~ u<=
+
+\ decimal digit
+{: ddigit
+ascii 0 u>= ascii 9 }~ u<=
+
+\ lowercase letter
+{: lower
+ascii a u>= ascii z }~ u<=
+
+\ uppercase letter
+{: upper
+ascii A u>= ascii Z }~ u<=
+
+\ letter
+{: letter
+' lower ' upper }~|
+
+\ alphanumeric
+{: alphanum
+' ddigit ' letter }~|
+
+\ arithmetics
+
+{: * u* }~ drop
+
+{: u/ u/mod }~ nip
+
+{: umod u/mod }~ drop
+
+\ numerals
+
+BASE address base
+
+\ set hexadecimal base
+{: hex
+10 base }~ c!
+
+\ set decimal base
+{: decimal
+A base }~ c!
+
+\ digit to integer conversion
+{: digit>int
+alphanum
+ascii 0 -
+carry?
+{ 9 }~ u<=
+{ 7 }~ -
+|
+base c@ }~ u<
+
+\ auxiliary numeral conversion
+{: _number ( a n -( fail )- n )
+{ over c@ digit>int >r base c@ * r> + swap 1+ swap }~self
+'id|
+over c@ ws drop
+}~ nip
+
+\ string numeral to unsigned integer conversion
+{: s>number ( a -( fail )- n )
+0 }~ _number
+
+\ string functions
+
+\ non-empty filter
+{: nonempty
+dup c@ 0<> }~ drop
+
+\ string length
+{: length
+0 swap
+{ nonempty 1+ swap 1+ swap }~self
+' drop
+}~|
+
+\ discard leading whitespace
+{: wsskip
+{ dup c@ 0<> ws drop 1+ }~self
+'id}~|
+
+\ dictionary (a.k.a. heap) functions
+
+\ put a string on the heap (w/o the trailing zero)
+{: s,
+{ dup c@ 0<> c, 1+ }~self
+' drop
+}~|
+
+\ list functions
+
+\ list extension
+{: link
+here 7 + 7 and 7 xor allot
+here swap }~ ,
+
+\ list traversal
+{: traverse&
+@ 0<> 'self & dup }~ cell+
+
+\ vocabulary functions
+
+\ skip word name
+{: skipstr ( a -- a )
+dup length + }~ 1+
+
+\ vocabulary in which words are created
+SEED address current
+
+\ last word in the current vocabulary
+{: last
+current }~ @
+
+\ create new word returning the payload address
+{: create
+word
+last
+link
+current !
+here cell+ cell+ pad length + 1+ ,
+' callcomp ,
+pad s, 0 c,
+here 3 + 3 and 3 xor allot
+here last 8 + !
+here 20 +
+literal
+F84087F0 d,
+D61F0200 d,		\ ret
+}
+
+\ create a new variable with an initial value
+{: variable
+create }~ ,
+
+\ redefine last word
+{: redefine
+last
+cell+ cell+ cell+ skipstr
+dup 3 + 3 and 3 xor +
+dp }~ !
+
+\ create constant
+{: constant
+create redefine
+literal
+F84087F0 d,
+D61F0200 }~ d,		\ ret
+
+\ create effect with default handler
+{: effect ( x -( heap )- )
+create redefine
+58000070 d, F9400210 d, D61F0200 d,
+here 8 + ,
+}~ ,
+
+\ postpone colon definition
+{: postpone
+create redefine
+'id tailcomp 3 }~ allot \ WTF? TODO: investigate
+
+\ search vocabulary
+{: search ( a -( pad fail )- a )
+traverse& cell+ cell+ pad s= cut cell- cell- }~ nip
+
+\ find word in context vocabulary
+{:: find ( -( pad fail )- a )
+current search dup @ swap cell+ }~ @
+
+\ create colon definition
+{: {: ( -( heap )- )
+create
+redefine
+here ' compile 'id|
+}~ drop
+
+\ postponed colon definition
+{: {::
+word find drop \ address of jmp instruction
+1+ \ address of jmp relative address
+dup
+4 + \ address of jmp anchor
+here swap -
+swap ! \ TODO: adjust interpret mode behavior address, too
+here ' compile 'id|
+}~ drop
+
+\ change compile mode behavior
+{: does ( x -( heap )- )
+last cell+ cell+ }~ !
+
+\ make most recently definted word immediate
+{: immediate ( -( heap )- )
+' execute }~ does
+
+\ I/O functions
+
+{: s.
+dup length write }~ drop
+
+\ emit new line (a.k.a. carriage return)
+{: cr
+A }~ emit
+
+\ emit space
+{: space
+bl }~ emit
+
+\ emit all context words
+{: words
+{ current traverse& cell+ cell+ s. space }~fail
+' cr }~| 
+
+\ interpreter functions
+
+\ interpreter
+{: interpret
+word
+{ find drop { cut }~fail }~|
+{ { pad }~ s>number { pad s. "  undefined" s. bye }~ cr }~|
+| }~self
+
+\ unnamed macro
+
+{: [ ' interpret 'id}~|
+
+x' execute does
+
+{: ] }~fail
+
+x' }~fail does   \  TODO: not allowed in compile mode
+
+\ numeral functions
+
+\ convert integer to digit
+{: >digit ( n -- c )
+{ 9 u<= ascii 0 }
+{ [ ascii A A - xliteral ] }
+| }~ +
+
+\ emit positive number w/o trailing space
+{: _. ( n -( emit )- )
+{ 0<> base c@ u/mod _. >digit }~ emit
+' drop
+}~|
+
+\ emit unsigned number w/ trailing space
+{: . ( n -( emit )- )
+{ 0= ascii 0 emit }~ drop
+' _.
+| }~ space
+
+\ input functions
+
+\ get next word from the input buffer
+{:: word ( -( tib pad fail )- )
+tib @ wsskip
+pad
+{ over c@ printable over c! pad
+[ PAD_LEN xliteral ] + u< 1+ swap 1+ swap }~self
+{ 0 swap c! tib }~ !
+}~|
+
+\ compiler
+
+{:: compile
+word
+' find
+{ pad s>number ' literal }
+| execute
+}~ compile  \ TODO: why }~self doesn't work?
+
+\ ok effect
+{: stdok
+"  ok" s. }~ cr
+
+effect ok
+
+\ empty word
+{:
+ok }~ input
+
+{ drop }~ input
+
+does
+
+\ debugging
+
+\ forget a word and what was defined after it
+{: forget
+word
+current
+search dictionary u>=
+cell- dup @ current ! dp }~ !
+
+\ output data stack content
+native .s
+X3 effects @ 8 + mov_rr,aa \ stack bottom
+3 label
+X19 X3 cmp_rr,rr
+x' cr jc
+4 jz_fs
+X3 push
+tos_store
+X0 X3 mov_rr,[rr]
+x' . call
+X3 pop
+X3 8 add_rr,s
+3 lb jmp
+4 rlabel
+tos_store
+x' . call
+x' cr jmp
+
+\ Seed loop
+{: seedl
+input
+' interpret
+{ "  fail" s. }~ cr
+|
+}~self
+
+\ output object code
+{: output
+' seedl 'id ' ok }~ handle
+
+7 rlabel \ the dictionary is ready here
+7 label
+
+X0 A mov_rr,x
+BASE X0 mov_[aa],rl \ initialize numeral base
+X5 0 mov_rr,x
+0 lb call \ get heap bottom
+DP X0 mov_[aa],rr \ initialize dictionary end
+DICTIONARY X0 mov_[aa],rr \ and beginning
+X19 effects @ mov_rr,aa \ initialize stack pointer
+X3 xcurrent @ mov_rr,aa \ initial vocabulary
+X2 SEED mov_rr,aa \ seed vocabulary pointer
+X2 X3 mov_[rr],rr \ initialize it
+
+6 label
+X3 6 lb mov_rr,aa
+FAIL X3 mov_[aa],rr
+X19 X0 mov_[rr],rr	\ save TOS
+X19 push		\ save data stack ptr.
+X3 mov_from_sp	\ return stack ptr. to X3
+X3 18 sub_rr,s		\ bottom of handler frame
+X3 push		\ circular reference
+X3 6 lb mov_rr,aa	\ this handler's address
+X3 push		\ circular reference
+X3 FAIL mov_rr,aa	\ failure handler
+X3 push
+ERR_SP mov_[aa],SP	\ set ERR_SP
+
+\ initialize effects
+X3 x' stdemit mov_rr,aa
+EFFECTS X3 mov_[aa],rr
+X3 x' stdwrite mov_rr,aa
+EFFECTS 8 + X3 mov_[aa],rr
+X3 x' stdkey mov_rr,aa
+EFFECTS 10 + X3 mov_[aa],rr
+X3 x' stdinput mov_rr,aa
+EFFECTS 18 + X3 mov_[aa],rr
+X3 x' stdok mov_rr,aa
+EFFECTS 20 + X3 mov_[aa],rr
+
+\ execute seed loop
+x' seedl jmp
+
+$ f_SizeInFile @ w!
+
+ELF dump
+
+bye
