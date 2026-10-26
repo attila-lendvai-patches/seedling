@@ -278,8 +278,8 @@ ebx pop
 \ assembler macros
 
 \ [port] TARGET GEOMETRY
-\ Values describe the target, not the compiling Seed. Offsets are
-\ in target bytes; the host may have a different cell size.
+\ Values describe the target, not the compiling Seed. Offsets
+\ are in target bytes; the host may have a different cell size.
 \
 \   xcell_bits  target cell size in bits
 \   xcelllog    log2(xcell); used by xcells
@@ -298,9 +298,10 @@ ebx pop
 \   code ...        no instruction alignment on x86
 \
 \ Absolute addresses are 0001xxxx (image base 10000).
-\ xword_comp is the compile-behavior field offset; xname_from_token is
-\ the name offset relative to the token cell.
-\ xrel_size is the width of a relative branch displacement field.
+\ xword_comp is the compile-behavior field offset.
+\ xname_from_token is the name offset from the token cell.
+\ xrel_size is the width of a relative branch
+\ displacement field.
 20 constant xcell_bits          \ 32 bits
 2  constant xcelllog            \ for shifts
 xcell_bits 3 rshift constant xcell
@@ -1101,16 +1102,18 @@ ecx jmp_rr
 \ execution control
 
 \ return from computation (target-side emitter; this is what a
-\ compile mode behavior calls to emit a return into the code being compiled.
-\ Keep in sync with the `ret` assembler macro above.)
+\ compile mode behavior calls to emit a return into the code
+\ being compiled. Keep in sync with the `ret` assembler macro
+\ above.)
 native ret,
 C3 xliteral
 x' c, call
 ret
 
 \ end of computation
-\ `}` is the identity computation: its interpret behavior is a bare return.
-\ Its compile behavior emits that return and then fails, ending the compiling.
+\ `}` is the identity computation: its interpret behavior is a
+\ bare return. Its compile behavior emits that return and then
+\ fails, ending the compiling.
 native }
 ret
 
@@ -1118,7 +1121,8 @@ ret
 
 does
 
-\ reference to identity (the identity computation is `}`: the bare return)
+\ reference to identity (the identity computation is `}`:
+\ the bare return)
 native 'id
 tos_store
 eax x' } mov_rr,aa

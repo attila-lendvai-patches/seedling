@@ -25,14 +25,14 @@ hex
 
 \ [port] IMAGE BASE
 \ The target image is loaded at ximage_base and must stay below
-\ 18000 (the system variables). Absolute addresses are emitted as
-\ ximage_base + low16(image offset).
+\ 18000 (the system variables). Absolute addresses are emitted
+\ as ximage_base + low16(image offset).
 10000 constant ximage_base
 ximage_base 10 rshift constant ximage_base_hi
 
 \ [port] TARGET GEOMETRY (AArch64)
-\ Values describe the target, not the compiling Sprout. Offsets are
-\ in target bytes; the host may have a different cell size.
+\ Values describe the target, not the compiling Sprout. Offsets
+\ are in target bytes; the host may have a different cell size.
 \
 \   xcell_bits  target cell size in bits
 \   xcelllog    log2(xcell); used by xcells
@@ -51,11 +51,12 @@ ximage_base 10 rshift constant ximage_base_hi
 \   +3 cells        zero-terminated name
 \   code ...        aligned to xcode_align
 \
-\ xword_comp is the compile-behavior field offset; xname_from_token is
-\ the name offset relative to the token cell.
-\ xcall_size is the size of the stack-call sequence, xquote_open_size
-\ the size of the quotation opener. xrel_size is the width of a
-\ relative branch field.
+\ xword_comp is the compile-behavior field offset.
+\ xname_from_token is the name offset from the token cell.
+\ xcall_size is the size of the stack-call sequence.
+\ xquote_open_size is the size of the quotation opener emitted
+\ by x{{.
+\ xrel_size is the width of a relative branch field.
 40 constant xcell_bits          \ 64 bits
 3  constant xcelllog            \ for shifts
 xcell_bits 3 rshift constant xcell
@@ -378,7 +379,7 @@ F constant X15
   A lshift swap 5 lshift or F100001F or d,
 }
 
-\ There is no flag-setting ORR on AArch64; emit ORR + CMP dst,#0.
+\ AArch64 has no flag-setting ORR; emit ORR plus CMP dst,#0.
 {: ORRS_r,r, ( dst src -- )
   over over ORR_r,r,
   swap 0 CMP_r,s,
@@ -434,7 +435,7 @@ F constant X15
 {: set_carry_sub 9A9F27F2 d, }
 {: set_carry_ne 9A9F07F2 d, }
 
-\ Basic x86-compatible macro names used by the rest of the source
+\ Basic x86-compatible macro names used throughout
 
 {: mov_rr,rr ( dst src -- ) MOV_r,r, }
 {: mov_rl,rl ( dst src -- ) MOV_r,r, }
@@ -658,7 +659,8 @@ F constant X15
   dup 5 lshift or D341FC00 or d,	\ LSR reg, reg, #1
   92400250 d,				\ AND X16, X18, #1
   D3410210 d,				\ LSL X16, X16, #63
-  dup dup 5 lshift or 100000 or AA000000 or d,	\ ORR reg, reg, X16
+  dup dup 5 lshift or 100000 or
+  AA000000 or d,	\ ORR reg, reg, X16
   drop
 }
 
@@ -789,7 +791,8 @@ rax rcx cmp_rr,rr
 {: FRINTZ_d,d ( dst src -- ) 1E65C000 fun2, }
 
 \ FP comparison
-{: FCMP_d,d ( left right -- ) 10 lshift swap 5 lshift or 1E602000 or d, }
+{: FCMP_d,d ( left right -- )
+  10 lshift swap 5 lshift or 1E602000 or d, }
 {: FCMP_d,0 ( reg -- ) 5 lshift 1E602008 or d, }
 
 \ conversions
@@ -912,7 +915,8 @@ X16 push
 
 {: x}} ( a -( heap )- )
 xcode_align align
-dup here swap - xrel_size + 2 rshift 3FFFFFF and 14000000 or swap xrel_size - d!
+dup here swap - xrel_size + 2 rshift 3FFFFFF and
+14000000 or swap xrel_size - d!
 tos_store
 X0 pop
 }
@@ -1484,7 +1488,8 @@ X3 jmp_rr		\ continue with handler
 
 x' endcomp does
 
-\ remember the exception dispatch code address (X3 is the slot pointer)
+\ remember the exception dispatch code address
+\ (X3 is the slot pointer)
 3 label raise !
 
 postpone word
@@ -1826,8 +1831,9 @@ rcx jmp_rr
 \ execution control
 
 \ return from computation (target-side emitter; this is what a
-\ compile mode behavior calls to emit a return into the code being compiled.
-\ Keep in sync with the `ret` assembler macro above.)
+\ compile mode behavior calls to emit a return into the code
+\ being compiled. Keep in sync with the `ret` assembler macro
+\ above.)
 native ret,
 F84087F0 xliteral
 x' d, call
@@ -1836,8 +1842,9 @@ x' d, call
 ret
 
 \ end of computation
-\ `}` is the identity computation: its interpret behavior is a bare return.
-\ Its compile behavior emits that return and then fails, ending the compiling.
+\ `}` is the identity computation: its interpret behavior is a
+\ bare return. Its compile behavior emits that return and then
+\ fails, ending the compiling.
 native }
 ret
 
@@ -1845,7 +1852,8 @@ ret
 
 does
 
-\ reference to identity (the identity computation is `}`: the bare return)
+\ reference to identity (the identity computation is `}`:
+\ the bare return)
 native 'id
 tos_store
 rax x' } mov_rr,aa
@@ -2527,10 +2535,11 @@ here 10 + dup FFFF and 5 lshift 10 or D2800000 or d,
 F81F8FF0 d,
 14000000 }~ d,
 
-\ Close a quotation. Its body lives inline in the code stream and may end
-\ with arbitrary-length data (e.g. a string literal), so align to 4 bytes
-\ before patching the branch and emitting the continuation: AArch64
-\ instructions, and thus branch targets and displacements, are 4-byte units.
+\ Close a quotation. Its body lives inline in the code stream
+\ and may end with arbitrary-length data (e.g. a string
+\ literal), so align to 4 bytes before patching the branch and
+\ emitting the continuation: AArch64 instructions, and thus
+\ branch targets and displacements, are 4-byte units.
 {: }}
 here 3 + 3 and 3 xor allot
 dup here swap - 4 + 2 rshift 3FFFFFF and 14000000 or swap 4 - d!
@@ -3217,7 +3226,7 @@ x' cr jmp
 { { " file not found" s. }~ cr }~ stderr
 | sproutl }~ bye
 
-\ the entry point is here; X20 keeps the initial process stack pointer
+\ the entry point is here; X20 keeps the process stack pointer
 7 rlabel_f! \ the dictionary is ready here
 7 label!
 

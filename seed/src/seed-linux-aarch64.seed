@@ -30,8 +30,8 @@ hex
 1 constant ximage_base_hi
 
 \ [port] TARGET GEOMETRY (AArch64)
-\ Values describe the target, not the compiling Seed. Offsets are
-\ in target bytes; the host may have a different cell size.
+\ Values describe the target, not the compiling Seed. Offsets
+\ are in target bytes; the host may have a different cell size.
 \
 \   xcell_bits  target cell size in bits
 \   xcelllog    log2(xcell); used by xcells
@@ -50,10 +50,11 @@ hex
 \   +3 cells        zero-terminated name
 \   code ...        aligned to xcode_align
 \
-\ xword_comp is the compile-behavior field offset; xname_from_token is
-\ the name offset relative to the token cell.
-\ xcall_size is the size of the stack-call sequence; xquote_open_size
-\ is the size of the quotation opener emitted by x{{.
+\ xword_comp is the compile-behavior field offset.
+\ xname_from_token is the name offset from the token cell.
+\ xcall_size is the size of the stack-call sequence.
+\ xquote_open_size is the size of the quotation opener emitted
+\ by x{{.
 \ xrel_size is the width of a relative branch field.
 40 constant xcell_bits          \ 64 bits
 3  constant xcelllog            \ for shifts
@@ -1065,7 +1066,8 @@ create ELF
 \ e_type: Elf file type (ET_EXEC = 2, executable)
 2 w,
 
-\ e_machine: Target architecture (EM_AARCH64 = 183 = 0xb7, aarch64)
+\ e_machine: Target architecture
+\ (EM_AARCH64 = 183 = 0xb7, aarch64)
 B7 w,
 
 \ e_version: Additional ELF version
@@ -1586,8 +1588,9 @@ ret
 \ execution control
 
 \ return from computation (target-side emitter; this is what a
-\ compile mode behavior calls to emit a return into the code being compiled.
-\ Keep in sync with the `ret` assembler macro above.)
+\ compile mode behavior calls to emit a return into the code
+\ being compiled. Keep in sync with the `ret` assembler macro
+\ above.)
 native ret,
 87F0 xliteral
 F840 xliteral
@@ -1598,8 +1601,9 @@ x' x32, call
 ret
 
 \ end of computation
-\ `}` is the identity computation: its interpret behavior is a bare return.
-\ Its compile behavior emits that return and then fails, ending the compiling.
+\ `}` is the identity computation: its interpret behavior is a
+\ bare return. Its compile behavior emits that return and then
+\ fails, ending the compiling.
 native }
 ret
 
@@ -1607,7 +1611,8 @@ ret
 
 does
 
-\ reference to identity (the identity computation is `}`: the bare return)
+\ reference to identity (the identity computation is `}`:
+\ the bare return)
 native 'id
 tos_store
 X0 x' } mov_rr,aa
@@ -1854,10 +1859,11 @@ x32,
 8FF0 F81F x32,
 0 1400 }~ x32,
 
-\ Close a quotation. Its body lives inline in the code stream and may end
-\ with arbitrary-length data (e.g. a string literal), so align to 4 bytes
-\ before patching the branch and emitting the continuation: AArch64
-\ instructions, and thus branch targets and displacements, are 4-byte units.
+\ Close a quotation. Its body lives inline in the code stream
+\ and may end with arbitrary-length data (e.g. a string
+\ literal), so align to 4 bytes before patching the branch and
+\ emitting the continuation: AArch64 instructions, and thus
+\ branch targets and displacements, are 4-byte units.
 {: }}
 align_code
 dup here swap - 4 + 2 rshift
