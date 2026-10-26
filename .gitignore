@@ -1,5 +1,4 @@
 .dir-locals.el
-build/
 playground/
-z80sim/
-test.sh
+tools-for-build/build/
+tools-for-build/z80sim/

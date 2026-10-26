@@ -46,17 +46,26 @@ existing words already says it.
 
 * `seed/src/seed-linux-{amd64,i386,aarch64}.seed` — Seed ports.
 * `seed/src/seed-z80-fictional.seed` — 16-bit reference host.
-* `seed/bin/seed-linux-amd64` — committed trusted bootstrap. It must
-  correspond to the current amd64 Seed source, not to an older revision.
+* `seed/bin/seed-linux-{amd64,i386,aarch64}` and
+  `seed/bin/seed-z80-fictional` — committed trusted bootstraps, one
+  per Seed port. Each must correspond to the current source for its
+  port, not to an older revision. The z80 file is a raw load image for
+  `z80sim`, not an executable ELF.
 * `sprout/src/sprout-linux-*.seed`, `sprout/src/sprout-z80-fictional.seed`
   — Sprout ports.
 * `seed/README.md`, `sprout/README.md` — the language specifications.
   `sprout/EXECUTION.md` explains interpret/compile mode duality.
-* `test.sh` — local, full test suite. It is gitignored and stays local.
-* `.github/workflows/ci.yaml` — the committed test definition.
+* `tools-for-build/test.sh` — full test suite; dispatches on the host
+  architecture and runs the z80 suite.
+* `tools-for-build/test-<arch>.sh` — host-architecture suites. The suffix
+  is the host, not the target.
+* `tools-for-build/README.md` — prerequisites, including binfmt setup.
+* `.github/workflows/ci.yaml` — installs dependencies and calls
+  `tools-for-build/test.sh`.
 
-Keep `test.sh` and CI in sync when adding a check. `build/`, `z80sim/`, and
-`test.sh` are not committed.
+Add checks to `tools-for-build/test-common.sh`; CI only calls the test
+script. `tools-for-build/build/` and `tools-for-build/z80sim/` are not
+committed.
 
 ## Invariants to re-establish after every change
 
@@ -64,34 +73,41 @@ Keep `test.sh` and CI in sync when adding a check. `build/`, `z80sim/`, and
    itself byte for byte (run at least two generations).
 2. **Cross agreement**: every capable Seed/Sprout compiling a source yields
    the same bytes as every other capable one.
-3. **Bootstrap correspondence**: if the amd64 Seed source changes, rebuild
-   `seed/bin/seed-linux-amd64` and verify it behaves identically on all
-   sources. Never leave it stale.
+3. **Bootstrap correspondence**: if a Seed source changes, rebuild its
+   committed bootstrap in the same change and verify it behaves
+   identically on all sources. amd64 is the trust root; the other
+   bootstraps are cross-built from it. Never leave one stale:
+   `tools-for-build/test-common.sh` fails when a committed binary is
+   missing or differs from a fresh build.
 4. **ELF validity**: every emitted ELF passes `eu-elflint -q` with no
    output. `readelf` is too permissive to be the validator.
-5. **z80 roots**: z80 self-host, z80 -> amd64, and z80 -> i386 still match.
+5. **z80 roots**: z80 self-host, z80 -> amd64, z80 -> i386, and
+   z80 -> aarch64 still match.
 
 ## Build and test
 
 A source is compiled by feeding it to a Seed on stdin and capturing stdout:
 
 ```sh
-./seed/bin/seed-linux-amd64 <seed/src/seed-linux-amd64.seed >build/seed.amd64
-chmod +x build/seed.amd64
-./build/seed.amd64 <seed/src/seed-linux-amd64.seed >build/seed.amd64.2
-cmp build/seed.amd64 build/seed.amd64.2
+./seed/bin/seed-linux-amd64 <seed/src/seed-linux-amd64.seed \
+    >tools-for-build/build/seed.amd64
+chmod +x tools-for-build/build/seed.amd64
+./tools-for-build/build/seed.amd64 <seed/src/seed-linux-amd64.seed \
+    >tools-for-build/build/seed.amd64.2
+cmp tools-for-build/build/seed.amd64 tools-for-build/build/seed.amd64.2
 ```
 
-The full local run needs `qemu-user` (`qemu-aarch64`, `qemu-i386`),
-`eu-elflint` (package `elfutils`), and `./z80sim/z80sim`:
+The full run needs binfmt_misc support for foreign architectures (see
+`tools-for-build/README.md`), `eu-elflint` (package `elfutils`), and a
+z80 simulator. `tools-for-build/test-z80.sh` checks out
+`https://github.com/nagydani/z80sim.git` at a pinned revision under
+`tools-for-build/z80sim` and builds it if needed.
 
 ```sh
-rm -rf build && bash test.sh
+rm -rf tools-for-build/build && bash tools-for-build/test.sh
 ```
 
-CI installs `qemu-user` and `elfutils`, clones and builds
-`https://github.com/nagydani/z80sim.git`, then performs the same checks.
-Do not add a check only to one of `test.sh` and CI.
+CI installs the dependencies and runs the same script.
 
 ## Porting conventions
 
