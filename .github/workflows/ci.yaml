@@ -55,6 +55,22 @@ jobs:
               sys.exit(1)
           PY
 
+      - name: Check committed Seed binaries match their sources
+        run: |
+          mkdir -p build
+          for src in seed/src/seed-*.seed; do
+            bin="seed/bin/$(basename "$src" .seed)"
+            if [ ! -f "$bin" ]; then
+              echo "warning: $bin is not committed" >&2
+              continue
+            fi
+            ./seed/bin/seed-linux-amd64 <"$src" >build/.committed-check
+            if ! cmp -s build/.committed-check "$bin"; then
+              echo "warning: $bin differs from a fresh build of $src" >&2
+            fi
+          done
+          rm -f build/.committed-check
+
       - name: Install QEMU user-mode emulators and elfutils
         run: sudo apt-get update && sudo apt-get install -y qemu-user elfutils
 
