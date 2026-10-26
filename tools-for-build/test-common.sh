@@ -17,6 +17,7 @@ fi
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 TOOLS="$ROOT/tools-for-build"
 BUILD="$TOOLS/build"
+PROBES="$TOOLS/probes"
 BOOTSTRAP_AMD64="$ROOT/seed/bin/seed-linux-amd64"
 BOOTSTRAP_AARCH64="$ROOT/seed/bin/seed-linux-aarch64"
 Z80SIM_DIR="$TOOLS/z80sim"
@@ -36,50 +37,187 @@ rel() {
     printf '%s\n' "${1#"$ROOT"/}"
 }
 
+host_arch() {
+    case "$(uname -m)" in
+        x86_64|amd64) echo amd64 ;;
+        i386|i486|i586|i686) echo i386 ;;
+        aarch64|arm64) echo aarch64 ;;
+        *) uname -m ;;
+    esac
+}
+
+elf_machine() {
+    local file=$1 magic
+    magic=$(head -c 4 "$file" | od -An -tx1 | tr -d ' \n')
+    if [ "$magic" != 7f454c46 ]; then
+        echo raw
+        return
+    fi
+    case "$(dd if="$file" bs=1 skip=18 count=2 2>/dev/null |
+            od -An -tx1 | tr -d ' \n')" in
+        3e00) echo amd64 ;;
+        0300) echo i386 ;;
+        b700) echo aarch64 ;;
+        *) echo unknown ;;
+    esac
+}
+
+# Run a target binary: native, through qemu, or through the z80 sim.
+run_target() {
+    local bin=$1 arch host q limit
+    shift
+    limit=${TEST_TIMEOUT:-120}
+    arch=$(elf_machine "$bin")
+    if [ "$arch" = raw ]; then
+        timeout "$limit" "$Z80SIM" "$bin" "$@"
+        return
+    fi
+    host=$(host_arch)
+    if [ "$arch" = "$host" ] ||
+       { [ "$arch" = i386 ] && [ "$host" = amd64 ]; }; then
+        timeout "$limit" "$bin" "$@"
+        return
+    fi
+    for q in "qemu-$arch" "qemu-${arch}-static"; do
+        if command -v "$q" >/dev/null 2>&1; then
+            timeout "$limit" "$q" "$bin" "$@"
+            return
+        fi
+    done
+    # Last resort: binfmt_misc may handle the foreign binary directly.
+    timeout "$limit" "$bin" "$@"
+}
+
 seed_run() {
     local bin=$1 input=$2 output=$3
     printf '  %s < %s > %s\n' \
         "$(rel "$bin")" "$(rel "$input")" "$(rel "$output")"
-    "$bin" <"$input" >"$output"
+    run_target "$bin" <"$input" >"$output"
 }
 
 prepare_build() {
     mkdir -p "$BUILD"
 }
 
+TEST_PASS=0
+TEST_FAIL=0
+TEST_SKIP=0
+
+test_pass() {
+    TEST_PASS=$((TEST_PASS + 1))
+    if [ "${TEST_VERBOSE:-0}" = 1 ]; then
+        printf '  PASS: %s\n' "$*"
+    fi
+    return 0
+}
+
+test_fail() {
+    TEST_FAIL=$((TEST_FAIL + 1))
+    printf '  FAIL: %s\n' "$*" >&2
+    return 0
+}
+
+test_skip() {
+    TEST_SKIP=$((TEST_SKIP + 1))
+    printf '  SKIP: %s\n' "$*" >&2
+    return 0
+}
+
+test_summary() {
+    printf '\n==> runtime: %d passed, %d failed, %d skipped\n' \
+        "$TEST_PASS" "$TEST_FAIL" "$TEST_SKIP"
+    [ "$TEST_FAIL" -eq 0 ]
+}
+
+# Run a Seed program and compare its whitespace-normalised stdout.
+check_stdout() {
+    local label=$1 want=$2 bin=$3 src=$4
+    local out="$BUILD/probe.out" err="$BUILD/probe.err"
+    local status=0 got
+    run_target "$bin" <"$src" >"$out" 2>"$err" || status=$?
+    if [ "$status" -ne 0 ]; then
+        test_fail "$label: exited $status ($(head -c 120 "$err" |
+            tr '\n' ' '))"
+        return 0
+    fi
+    got=$(tr -d '[:space:]' <"$out")
+    if [ "$got" = "$want" ]; then
+        test_pass "$label"
+    else
+        test_fail "$label: expected '$want', got '$got'"
+    fi
+    return 0
+}
+
+probe_expected() {
+    case "$(basename "$1")" in
+        postpone.seed) echo 31 ;;
+        constant.seed) echo 2A ;;
+        macro.seed) echo 5 ;;
+        self.seed) echo 321 ;;
+        variable.seed) echo 7 ;;
+        string.seed) echo hi ;;
+        base.seed) echo 41255 ;;
+        *) echo "" ;;
+    esac
+}
+
+# Run all probes against one freshly built Seed or Sprout binary.
+runtime_suite() {
+    local bin=$1 label=$2 before=$TEST_FAIL probe want
+    if [ ! -f "$bin" ]; then
+        test_fail "$label: not built"
+        return 1
+    fi
+    chmod +x "$bin" 2>/dev/null || true
+    for probe in "$PROBES"/*.seed; do
+        want=$(probe_expected "$probe")
+        if [ -z "$want" ]; then
+            test_fail "$label $(basename "$probe"): no expected output"
+            continue
+        fi
+        check_stdout "$label $(basename "$probe")" "$want" "$bin" "$probe"
+    done
+    if [ "$TEST_FAIL" -eq "$before" ]; then
+        printf '  runtime %s: ok\n' "$label"
+        return 0
+    fi
+    printf '  runtime %s: FAILED\n' "$label" >&2
+    return 1
+}
+
 source_line_check() {
     echo "==> source line lengths"
     cd "$ROOT"
-    python3 - <<'PY'
-import glob
-import os
-import sys
-
-bad = False
-wide = []
-for path in sorted(glob.glob('seed/src/*.seed') +
-                   glob.glob('sprout/src/*.seed')):
-    with open(path, encoding='utf-8') as source:
-        for number, line in enumerate(source, 1):
-            line = line.rstrip('\r\n')
-            size = len(line.encode('utf-8'))
-            if size > 64:
-                print(f'{path}:{number}: {size} bytes (max 64)',
-                      file=sys.stderr)
-                bad = True
-            width = len(line.expandtabs(8))
-            if width > 64:
-                wide.append((path, number, width))
-if wide:
-    print(f'warning: {len(wide)} source lines exceed 64 columns; '
-          'tolerated until edited', file=sys.stderr)
-    if os.environ.get('TEST_VERBOSE') == '1':
-        for path, number, width in wide:
-            print(f'{path}:{number}: {width} columns (max 64)',
-                  file=sys.stderr)
-if bad:
-    sys.exit(1)
-PY
+    local bad=0 wide=0 f n
+    for f in seed/src/*.seed sprout/src/*.seed; do
+        if ! LC_ALL=C awk '
+            length($0) > 64 {
+                printf "%s:%d: %d bytes (max 64)\n", FILENAME, FNR,
+                    length($0) > "/dev/stderr"
+                bad = 1
+            }
+            END { exit bad }
+        ' "$f"; then
+            bad=1
+        fi
+        n=$(expand -t 8 "$f" | awk 'length($0) > 64 { n++ } END { print n+0 }')
+        if [ "$n" -gt 0 ]; then
+            wide=$((wide + n))
+            if [ "${TEST_VERBOSE:-0}" = 1 ]; then
+                expand -t 8 "$f" | awk -v file="$f" '
+                    length($0) > 64 {
+                        printf "%s:%d: %d columns (max 64)\n",
+                            file, FNR, length($0) > "/dev/stderr"
+                    }'
+            fi
+        fi
+    done
+    if [ "$wide" -gt 0 ]; then
+        echo "warning: $wide source lines exceed 64 columns;" \
+             "tolerated until edited" >&2
+    fi
+    [ "$bad" -eq 0 ]
 }
 
 committed_binary_check() {
@@ -163,7 +301,7 @@ bye
 EOF
     printf '  %s < %s (expect failure)\n' \
         "$(rel "$bin")" "$(rel "$BUILD/far-call.seed")"
-    if "$bin" <"$BUILD/far-call.seed" \
+    if run_target "$bin" <"$BUILD/far-call.seed" \
         >"$BUILD/far-call.out" 2>"$BUILD/far-call.err"; then
         echo "error: the aarch64 Seed accepted an out-of-range call" >&2
         return 1
@@ -193,6 +331,7 @@ host_suite() {
     # (x86) Compile Sprout from the host Seed
     seed_run "$host_seed" "$ROOT/sprout/src/sprout-linux-amd64.seed" "$BUILD/sprout"
     chmod +x "$BUILD/sprout"
+    runtime_suite "$BUILD/sprout" sprout-amd64
 
     # (x86) Compile Seed from the Sprout binary
     seed_run "$BUILD/sprout" "$ROOT/seed/src/seed-linux-amd64.seed" "$BUILD/seed"
@@ -201,16 +340,19 @@ host_suite() {
     # (amd64) Seed bootstraps itself
     seed_run "$host_seed" "$ROOT/seed/src/seed-linux-amd64.seed" "$BUILD/seed.amd64.2"
     chmod +x "$BUILD/seed.amd64.2"
+    runtime_suite "$BUILD/seed.amd64.2" seed-amd64
     seed_run "$BUILD/seed.amd64.2" "$ROOT/seed/src/seed-linux-amd64.seed" "$BUILD/seed.amd64.3"
     cmp --verbose "$BUILD/seed.amd64.2" "$BUILD/seed.amd64.3"
 
     # (aarch64) Seed cross-compiles from the host Seed
     seed_run "$host_seed" "$ROOT/seed/src/seed-linux-aarch64.seed" "$BUILD/seed-aarch64"
     chmod +x "$BUILD/seed-aarch64"
+    runtime_suite "$BUILD/seed-aarch64" seed-aarch64-gen1
 
     # (aarch64) Seed bootstraps itself
     seed_run "$BUILD/seed-aarch64" "$ROOT/seed/src/seed-linux-aarch64.seed" "$BUILD/seed-aarch64.2"
     chmod +x "$BUILD/seed-aarch64.2"
+    runtime_suite "$BUILD/seed-aarch64.2" seed-aarch64-gen2
     seed_run "$BUILD/seed-aarch64.2" "$ROOT/seed/src/seed-linux-aarch64.seed" "$BUILD/seed-aarch64.3"
     cmp --verbose "$BUILD/seed-aarch64" "$BUILD/seed-aarch64.2"
     cmp --verbose "$BUILD/seed-aarch64.2" "$BUILD/seed-aarch64.3"
@@ -225,12 +367,14 @@ host_suite() {
     # (i386) Seed bootstraps itself
     seed_run "$BUILD/seed-i386" "$ROOT/seed/src/seed-linux-i386.seed" "$BUILD/seed-i386.2"
     chmod +x "$BUILD/seed-i386.2"
+    runtime_suite "$BUILD/seed-i386.2" seed-i386
     seed_run "$BUILD/seed-i386.2" "$ROOT/seed/src/seed-linux-i386.seed" "$BUILD/seed-i386.3"
     cmp --verbose "$BUILD/seed-i386.2" "$BUILD/seed-i386.3"
 
     # (aarch64) Compile Sprout from the host Sprout
     seed_run "$BUILD/sprout" "$ROOT/sprout/src/sprout-linux-aarch64.seed" "$BUILD/sprout-aarch64"
     chmod +x "$BUILD/sprout-aarch64"
+    runtime_suite "$BUILD/sprout-aarch64" sprout-aarch64-gen1
 
     # (aarch64) Sprout builds identically with the host Seed and the
     # aarch64 Seed
@@ -243,6 +387,7 @@ host_suite() {
     # (aarch64) Sprout bootstraps itself
     seed_run "$BUILD/sprout-aarch64" "$ROOT/sprout/src/sprout-linux-aarch64.seed" "$BUILD/sprout-aarch64.2"
     chmod +x "$BUILD/sprout-aarch64.2"
+    runtime_suite "$BUILD/sprout-aarch64.2" sprout-aarch64-gen2
     seed_run "$BUILD/sprout-aarch64.2" "$ROOT/sprout/src/sprout-linux-aarch64.seed" "$BUILD/sprout-aarch64.3"
     cmp --verbose "$BUILD/sprout-aarch64" "$BUILD/sprout-aarch64.2"
     cmp --verbose "$BUILD/sprout-aarch64.2" "$BUILD/sprout-aarch64.3"
@@ -267,6 +412,7 @@ host_suite() {
     # (i386) Sprout bootstraps itself
     seed_run "$BUILD/sprout-i386" "$ROOT/sprout/src/sprout-linux-i386.seed" "$BUILD/sprout-i386.2"
     chmod +x "$BUILD/sprout-i386.2"
+    runtime_suite "$BUILD/sprout-i386.2" sprout-i386
     seed_run "$BUILD/sprout-i386.2" "$ROOT/sprout/src/sprout-linux-i386.seed" "$BUILD/sprout-i386.3"
     cmp --verbose "$BUILD/sprout-i386.2" "$BUILD/sprout-i386.3"
 
@@ -342,14 +488,17 @@ i386_suite() {
     # (amd64) reference Seed
     seed_run "$BOOTSTRAP" "$ROOT/seed/src/seed-linux-amd64.seed" "$BUILD/seed.amd64.2"
     chmod +x "$BUILD/seed.amd64.2"
+    runtime_suite "$BUILD/seed.amd64.2" seed-amd64
     seed_run "$BUILD/seed.amd64.2" "$ROOT/seed/src/seed-linux-amd64.seed" "$BUILD/seed.amd64.3"
     cmp --verbose "$BUILD/seed.amd64.2" "$BUILD/seed.amd64.3"
 
     # (aarch64) reference Seed
     seed_run "$BOOTSTRAP" "$ROOT/seed/src/seed-linux-aarch64.seed" "$BUILD/seed-aarch64"
     chmod +x "$BUILD/seed-aarch64"
+    runtime_suite "$BUILD/seed-aarch64" seed-aarch64-gen1
     seed_run "$BUILD/seed-aarch64" "$ROOT/seed/src/seed-linux-aarch64.seed" "$BUILD/seed-aarch64.2"
     chmod +x "$BUILD/seed-aarch64.2"
+    runtime_suite "$BUILD/seed-aarch64.2" seed-aarch64-gen2
     seed_run "$BUILD/seed-aarch64.2" "$ROOT/seed/src/seed-linux-aarch64.seed" "$BUILD/seed-aarch64.3"
     cmp --verbose "$BUILD/seed-aarch64" "$BUILD/seed-aarch64.2"
     cmp --verbose "$BUILD/seed-aarch64.2" "$BUILD/seed-aarch64.3"
@@ -364,6 +513,7 @@ i386_suite() {
     # (i386) Seed bootstraps itself
     seed_run "$BUILD/seed-i386" "$ROOT/seed/src/seed-linux-i386.seed" "$BUILD/seed-i386.2"
     chmod +x "$BUILD/seed-i386.2"
+    runtime_suite "$BUILD/seed-i386.2" seed-i386
     seed_run "$BUILD/seed-i386.2" "$ROOT/seed/src/seed-linux-i386.seed" "$BUILD/seed-i386.3"
     cmp --verbose "$BUILD/seed-i386" "$BUILD/seed-i386.2"
     cmp --verbose "$BUILD/seed-i386.2" "$BUILD/seed-i386.3"
@@ -375,6 +525,7 @@ i386_suite() {
     # (i386) Sprout bootstraps itself
     seed_run "$BUILD/sprout-i386" "$ROOT/sprout/src/sprout-linux-i386.seed" "$BUILD/sprout-i386.2"
     chmod +x "$BUILD/sprout-i386.2"
+    runtime_suite "$BUILD/sprout-i386.2" sprout-i386
     seed_run "$BUILD/sprout-i386.2" "$ROOT/sprout/src/sprout-linux-i386.seed" "$BUILD/sprout-i386.3"
     cmp --verbose "$BUILD/sprout-i386" "$BUILD/sprout-i386.2"
     cmp --verbose "$BUILD/sprout-i386.2" "$BUILD/sprout-i386.3"

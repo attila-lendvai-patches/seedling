@@ -38,10 +38,14 @@ echo "==> z80 suite"
 echo "    bootstrap: $(rel "$BOOTSTRAP")"
 echo "    z80 simulator: $(rel "$Z80SIM")"
 
+# Build the z80 Seed from the worktree and probe it before the z80
+# cross-compilation tests.
+seed_run "$BOOTSTRAP" "$ROOT/seed/src/seed-z80-fictional.seed" "$BUILD/seed.z80"
+runtime_suite "$BUILD/seed.z80" seed-z80
+
 seed_run "$BOOTSTRAP" "$ROOT/seed/src/seed-linux-amd64.seed" "$BUILD/ref.amd64"
 seed_run "$BOOTSTRAP" "$ROOT/seed/src/seed-linux-i386.seed" "$BUILD/ref.i386"
 seed_run "$BOOTSTRAP" "$ROOT/seed/src/seed-linux-aarch64.seed" "$BUILD/ref.aarch64"
-seed_run "$BOOTSTRAP" "$ROOT/seed/src/seed-z80-fictional.seed" "$BUILD/seed.z80"
 
 # (z80) Seed cross-compiles to amd64
 z80_run "$BUILD/seed.z80" "$ROOT/seed/src/seed-linux-amd64.seed" "$BUILD/seed.z80-amd64"

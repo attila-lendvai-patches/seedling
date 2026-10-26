@@ -37,7 +37,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
               qemu-user-static binfmt-support elfutils libz80ex-dev \
-              build-essential git python3
+              build-essential git
 
       - name: Enable binfmt for foreign architectures
         run: |

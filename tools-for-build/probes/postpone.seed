@@ -1,0 +1,7 @@
+output
+hex
+postpone foo
+{: bar 2A foo . cr }
+{:: foo 7 + }
+bar
+bye

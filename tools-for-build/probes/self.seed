@@ -1,0 +1,5 @@
+output
+hex
+{: down { dup . 1- dup 0<> }~self ' drop }~|
+3 down
+bye

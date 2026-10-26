@@ -1,0 +1,5 @@
+output
+hex
+7 variable v
+v @ . cr
+bye
