@@ -127,7 +127,7 @@ xword_comp  xname_from_token
 
 Where instructions need alignment, emit `xcode_align_bytes` as a target
 constant and derive `xcode_align_addr`/`xcode_align` from it instead of
-repeating the size.  These are target-side words; the host uses
+repeating the size. These are target-side words; the host uses
 `xcode_align_bytes align`.
 
 The z80 has threaded code and no token/comp cells; do not force x86-style
@@ -193,6 +193,9 @@ ELF code.
   are part of the design; they keep the return stack bounded.
 * Keep architecture-dependent code in `[port]` blocks; shared logic
   belongs in the common part of the file.
+* Use one space after a sentence-ending period, never two: in
+  documentation, code comments, and commit messages. Spacing used to
+  align columns in code or comment tables is layout, not prose.
 
 ## Git
 

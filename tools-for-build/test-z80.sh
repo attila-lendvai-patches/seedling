@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Host: z80.  The "z80" suffix names the assumed *host* architecture,
+# Host: z80. The "z80" suffix names the assumed *host* architecture,
 # not the target: the z80 Seed is run with z80sim and cross-compiles
 # to every Seed port.
 
