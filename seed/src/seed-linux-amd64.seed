@@ -303,9 +303,7 @@ op_syscall
 3  constant xcelllog            \ for shifts
 xcell_bits 3 rshift constant xcell
 xcell 1 - constant xcell1-      \ 7
-xcell1- invert 1+ constant xcell_mask   \ [trap] -xcell+1:
-\   xalign(18152) is 18159, not 18158. Kept byte-identical in C1;
-\   normalized in the next commit.
+xcell1- invert constant xcell_mask      \ FFF8
 {: xcells  xcelllog lshift }
 {: xalign  xcell1- + xcell_mask and }
 {: xcell+  xcell + }
