@@ -15,13 +15,25 @@ output \ this must be on the first line
 \ Glossary
 \ TOS: top of stack
 
-\ Imlementation
-\ X0 holds TOS, the top element of the data stack
-\ X19 points to the data stack (but top element is in X0)
-\ X3 is a scratch register
-\ X29 is the call (shadow) stack pointer; X30 is the link
-\ register, so X29 is the highest suitable register
-\ SP is the hardware stack pointer and stays 16-byte aligned
+\ Implementation
+\ This port does not follow AAPCS64 internally; only the
+\ Linux syscall ABI at SVC is followed. Register roles:
+\   X0/rax  TOS, the top element of the data stack
+\   X19/rbx data stack pointer (TOS lives in X0)
+\   X3/rcx  scratch / second operand
+\   X16, X17 scratch for addresses and instructions
+\   X18     carry flag
+\   X1/rsi, X2/rdx, X4/rdi, X5/rbp scratch
+\   X20     process stack pointer at startup
+\   X29     shadow call stack pointer; X30 is unused
+\   SP      hardware stack pointer, 16-byte aligned
+\ Syscalls take arguments in X0-X5, the number in X8, and
+\ return in X0. The kernel preserves the other registers.
+\
+\ Helper contract: a helper called in the middle of a word
+\ preserves X0, X18, X19, X29, and SP. X3 is preserved only
+\ when the helper says so; X16 and X17 are scratch. Each
+\ helper states any further clobbers and PSTATE effects.
 
 hex
 
@@ -1419,6 +1431,7 @@ ret
 
 \ Die loudly if a generated call cannot reach its target.
 \ Build the message in PAD; no data addresses are emitted.
+\ Does not return.
 native xcall_overflow
 X1 PAD mov_rr,aa
 X16 63 mov_rr,x
@@ -1596,6 +1609,8 @@ ret
 \ lowered when a previously emitted instruction is patched.
 \ A 16-byte stride reaches every cache line because 16 bytes
 \ is the smallest possible line size.
+\ Contract: preserves X0-X3, X18, X19, X29, and SP; clobbers
+\ X16/X17 and PSTATE flags.
 native xicache_sync
 rax push
 rsi push
