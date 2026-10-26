@@ -44,6 +44,14 @@ hex
 10000 constant ximage_base
 ximage_base 10 rshift constant ximage_base_hi
 
+\ [port] MEMORY MAP
+\ The loaded segment ends at 400000.
+\   10000   image base
+\   1A000   system variables and .bss start
+\   200000  data stack bottom, 64 KiB
+\   210000  dictionary bottom
+\   400000  heap end and segment end
+
 \ [port] TARGET GEOMETRY (AArch64)
 \ Values describe the target, not the compiling Sprout. Offsets
 \ are in target bytes; the host may have a different cell size.
@@ -731,8 +739,6 @@ F constant X15
 40 constant sys.write
 38 constant sys.open
 39 constant sys.close
-E2 constant sys.mprotect
-D6 constant sys.brk
 DC constant sys.clone
 DD constant sys.execve
 5D constant sys.exit
@@ -1265,8 +1271,8 @@ $ f_ProgramHeaders @ w!
 f_SizeInFile field
 0 q,
 
-\ Size in memory
-0 w, 1 w, 0 d,
+\ Size in memory; the segment ends at 400000
+0 w, 3F w, 0 d, \ 0x3f0000
 
 \ Alignment
 1000 q,
@@ -1328,8 +1334,8 @@ A000 w, ximage_base_hi w, 0 d,
 f_BssOffset field
 0 q,
 
-\ Section size
-6000 q,
+\ Section size; the section ends at 400000
+6000 w, 3E w, 0 d, \ 0x3e6000
 
 \ Linked section index
 0 d,
@@ -1403,31 +1409,19 @@ $ f_EntryPoint @ w!
 
 7 jmp_f \ jump over the initial dictionary
 
-0 label! \ get heap top
-sys.brk syscall
+\ Low-level heap allocation of X3 bytes. Clobbers X3, X16,
+\ and the flags. Exits when the new dictionary end would pass
+\ the fixed heap end.
+1 label!
+X3 DP add_rr,[aa] \ X3 = new dictionary end
+X16 0 mov_rr,x
+X16 40 MOVK_r,u16, \ 0x400000
+X3 X16 cmp_rr,rr
+2 ja_fs \ past the heap end
 ret
-
-1 label! \ low-level heap allocation of X3 bytes
-X0 push
-X19 push
-X3 push
-X5 0 mov_rr,x
-0 label call
-X3 pop
-X3 DP add_rr,[aa]
-X0 X3 cmp_rr,rr
-2 jae_fs
-X5 X3 mov_rr,rr
-0 label call
-X5 DICTIONARY mov_rr,[aa] \ beginning of heap
-X0 X5 sub_rr,rr	\ calculate length of heap
-X1 X0 mov_rr,rr	\ move length to X1
-X2 7 mov_rr,x		\ PROT_READ + PROT_WRITE + PROT_EXEC
-sys.mprotect syscall
 2 rlabel
-X19 pop
-X0 pop
-ret
+X5 1 mov_rr,x
+sys.exit syscall
 
 \ Die loudly if a generated call cannot reach its target.
 \ Build the message in PAD; no data addresses are emitted.
@@ -3450,14 +3444,10 @@ X20 mov_from_sp
 
 X0 A mov_rr,x
 BASE X0 mov_[aa],rl \ initialize numeral base
-X5 0 mov_rr,x
-0 label call \ get heap bottom
-X19 X0 mov_rr,rr \ data stack starts at the current break
-X2 X0 mov_rr,rr
-X5 10000 mov_rr,x
-X2 X5 add_rr,rr \ reserve 64K for the data stack
-X5 X2 mov_rr,rr
-sys.brk syscall \ extend the break over the data stack
+X19 0 mov_rr,x
+X19 20 MOVK_r,u16, \ 0x200000, data stack bottom
+X2 0 mov_rr,x
+X2 21 MOVK_r,u16, \ 0x210000, dictionary
 DP X2 mov_[aa],rr \ initialize dictionary end
 DICTIONARY X2 mov_[aa],rr \ and beginning
 XSYNC_FROM X2 mov_[aa],rr \ no emitted code yet
