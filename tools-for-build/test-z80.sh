@@ -11,14 +11,7 @@ fi
 
 source "$(dirname "${BASH_SOURCE[0]}")/test-common.sh"
 
-case "$(uname -m)" in
-    aarch64|arm64)
-        BOOTSTRAP="$BOOTSTRAP_AARCH64"
-        ;;
-    *)
-        BOOTSTRAP="$BOOTSTRAP_AMD64"
-        ;;
-esac
+BOOTSTRAP=$(bootstrap_for_host)
 
 prepare_build
 if [ "${TEST_CHECKS_DONE:-0}" != 1 ]; then

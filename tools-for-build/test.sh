@@ -48,14 +48,7 @@ esac
 
 echo "==> host architecture: $host"
 
-case "$host" in
-    aarch64)
-        BOOTSTRAP="$BOOTSTRAP_AARCH64"
-        ;;
-    *)
-        BOOTSTRAP="$BOOTSTRAP_AMD64"
-        ;;
-esac
+BOOTSTRAP=$(bootstrap_for_host)
 
 run source_line_check
 run committed_binary_check
