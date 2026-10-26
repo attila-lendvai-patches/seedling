@@ -42,14 +42,14 @@ ximage_base 10 rshift constant ximage_base_hi
 \   xcells      ( n -- n*xcell )
 \   xalign      ( a -- a' ) align address up to a cell
 \   xcell+      ( a -- a+xcell )
-\   xcode_align instruction alignment in bytes
+\   xcode_align_bytes instruction alignment in bytes
 \
 \ Word entry layout (entry = link cell; 'current' points here):
 \   +0              link
 \   +xcell          token / xt (code address)
 \   +2 cells        compile-mode behavior
 \   +3 cells        zero-terminated name
-\   code ...        aligned to xcode_align
+\   code ...        aligned to xcode_align_bytes
 \
 \ xword_comp is the compile-behavior field offset.
 \ xname_from_token is the name offset from the token cell.
@@ -66,7 +66,7 @@ xcell1- invert constant xcell_mask      \ FFF8
 {: xalign  xcell1- + xcell_mask and }
 {: xcell+  xcell + }
 
-4 constant xcode_align
+4 constant xcode_align_bytes
 xcell 2 * constant xword_comp
 xcell 2 * constant xname_from_token
 10 constant xcall_size
@@ -888,33 +888,33 @@ word
 pad
 s,
 0 c,
-xcode_align align
+xcode_align_bytes align
 $ swap w!
 }
 
 \ target literal
 {: xliteral ( x -( heap )- )
-xcode_align align
+xcode_align_bytes align
 tos_store
 rax swap mov_rr,xx
 }
 
 \ target address literal
 {: xaliteral ( a -( heap )- )
-xcode_align align
+xcode_align_bytes align
 tos_store
 rax swap mov_rr,aa
 }
 
 {: x{{ ( -( heap )- a )
-xcode_align align
+xcode_align_bytes align
 $ xquote_open_size + ximage_base + X16 swap mov_rr,aa
 X16 push
 14000000 d,
 }~ here
 
 {: x}} ( a -( heap )- )
-xcode_align align
+xcode_align_bytes align
 dup here swap - xrel_size + 2 rshift 3FFFFFF and
 14000000 or swap xrel_size - d!
 tos_store
@@ -2500,10 +2500,25 @@ native }~
 
 x' drop does
 
+\ xcode_align_bytes is the instruction boundary. Emit it as a
+\ target constant, then derive xcode_align_addr and xcode_align.
+\ Target-side words; x marks this cross/target code-alignment
+\ family.  The host uses xcode_align_bytes with its own align.
+native xcode_align_bytes
+xcode_align_bytes xliteral
+ret
+
+{: xcode_align_addr
+xcode_align_bytes + 1-
+xcode_align_bytes 1- invert and }
+
+{: xcode_align
+here xcode_align_addr here - allot }
+
 \ literal constructors
 
 {: literal
-here 3 + 3 and 3 xor allot
+xcode_align
 F9000260 d,
 91002273 d,
 dup FFFF and 5 lshift D2800000 or d,
@@ -2529,7 +2544,7 @@ postpone undef
 x' >lit does
 
 {: {{
-here 3 + 3 and 3 xor allot
+xcode_align
 here 10 + dup FFFF and 5 lshift 10 or D2800000 or d,
 10 rshift FFFF and 5 lshift 10 or F2A00000 or d,
 F81F8FF0 d,
@@ -2541,7 +2556,7 @@ F81F8FF0 d,
 \ emitting the continuation: AArch64 instructions, and thus
 \ branch targets and displacements, are 4-byte units.
 {: }}
-here 3 + 3 and 3 xor allot
+xcode_align
 dup here swap - 4 + 2 rshift 3FFFFFF and 14000000 or swap 4 - d!
 F9000260 d,
 91002273 d,
@@ -2571,7 +2586,7 @@ postpone compile
 
 {: quotate {{ execute }~ }}
 
-{: { here 3 + 3 and 3 xor allot here ' compile 'id}~|
+{: { xcode_align here ' compile 'id}~|
 
 x' quotate does
 
@@ -2912,7 +2927,7 @@ current @ !
 here cell+ cell+ pad length + 1+ ,
 ' callcomp ,
 pad s, 0 c,
-here 3 + 3 and 3 xor allot
+xcode_align
 here last 8 + !
 \ payload = code + literal(18) + ret(8)
 here 20 +
@@ -2927,7 +2942,7 @@ create }~ ,
 {: redefine
 last
 cell+ cell+ cell+ skipstr
-dup 3 + 3 and 3 xor +
+xcode_align_addr
 dp }~ !
 
 \ create constant
