@@ -936,7 +936,7 @@ f_TotalFileSize field
 3 d,
 
 \ Virtual address
-8000 w, 1 w,
+8000 w, ximage_base_hi w,
 
 \ Offset in the file
 f_BssOffset field
@@ -971,7 +971,7 @@ f_BssOffset field
 3 d,
 
 \ Virtual address
-8000 w, 1 w,
+8000 w, ximage_base_hi w,
 
 \ Offset in the file
 f_DataOffset field

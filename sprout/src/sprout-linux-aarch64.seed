@@ -1287,7 +1287,7 @@ f_TotalFileSize field
 3 q,
 
 \ Virtual address
-A000 w, 1 w, 0 d,
+A000 w, ximage_base_hi w, 0 d,
 
 \ Offset in the file
 f_BssOffset field
@@ -1322,7 +1322,7 @@ f_BssOffset field
 3 q,
 
 \ Virtual address
-A000 w, 1 w, 0 d,
+A000 w, ximage_base_hi w, 0 d,
 
 \ Offset in the file
 f_DataOffset field
