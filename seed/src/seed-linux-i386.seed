@@ -610,7 +610,7 @@ dup
 here swap -
 swap w!
 $ ' xcompile 'id|
-}~ drop \ TODO: adjust interpret mode behavior address, too
+}~ drop
 
 \ colon definitions
 {: {:
@@ -1569,7 +1569,7 @@ FF c, 24 c, 25 c, d,	\ jmp [address]
 \ postpone colon definition
 {: postpone
 create redefine
-'id tailcomp 3 }~ allot \ WTF? TODO: investigate
+'id tailcomp }
 
 \ search vocabulary
 {: search ( a -( pad fail )- a )
@@ -1593,7 +1593,7 @@ word find drop \ address of jmp instruction
 dup
 4 + \ address of jmp anchor
 here swap -
-swap ! \ TODO: adjust interpret mode behavior address, too
+swap d! \ patch the 32-bit relative field
 here ' compile 'id|
 }~ drop
 

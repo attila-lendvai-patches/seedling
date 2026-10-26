@@ -108,6 +108,10 @@ xcell 2 * constant xname_from_token
 \ 16-bit little-endian store
 {: w!		dup >r 1+ >r lsb swap r> c! r> c! }
 
+\ [port] store a 32-bit value as two 16-bit words
+\ ( low16 high16 addr -- )
+{: x32!		>r swap r> dup 2 + >r w! r> w! }
+
 \ dump the tail of the heap for outputting the result
 {: dump		here over - write drop }
 
@@ -1079,7 +1083,7 @@ xcreate
 \ postpone colon definition
 {: postpone
 native
-14000000 d, \ branch forward
+0 w, 1400 w,
 }
 
 \ effect definition
@@ -1145,11 +1149,12 @@ $ ' xcompile 'id}~|
 
 \ postponed colon definition
 {: {::
-word xfind' w@ offset @ + \ host address of branch instruction
-dup 4 +
-here 4 + swap -
-2 rshift 3FFFFFF and 14000000 or
-swap d!
+word xfind' w@ offset @ + \ host address of branch
+dup here swap -
+2 rshift
+swap >r
+dup FFFF and swap drop
+1400 r> x32!
 $ ' xcompile 'id|
 }~ drop
 
@@ -3162,7 +3167,7 @@ literal
 \ postpone colon definition
 {: postpone
 create redefine
-'id tailcomp 3 }~ allot \ WTF? TODO: investigate
+'id tailcomp }
 
 \ search vocabulary
 {: search ( a -( pad fail )- a )
@@ -3182,12 +3187,14 @@ here ' compile 'id|
 \ postponed colon definition
 {: {::
 word find drop \ target address of the branch instruction
+dup xicache_mark
 dup
 here swap -
-2 rshift 3FFFFFF and 14000000 or
-swap
-dup xicache_mark
-d!
+2 rshift
+dup FFFF and
+swap 10 rshift 3FF and 1400 or
+10 lshift or
+swap d!
 here ' compile 'id|
 }~ drop
 
