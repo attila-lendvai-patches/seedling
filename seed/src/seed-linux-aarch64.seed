@@ -1283,6 +1283,23 @@ sys.write syscall
 X5 1 mov_rr,x
 sys.exit syscall
 
+\ ( X0 target, X3 site -- )
+\ Clobbers X16/X17 and PSTATE flags. Jumps to xcall_overflow
+\ when the byte displacement does not fit the signed 26-bit
+\ B field.
+native xcall_check_range
+X16 X0 mov_rr,rr
+X16 X3 sub_rr,rr
+X17 1 mov_rr,x
+X17 1B shl_rr,s          \ 0x8000000
+X16 X17 add_rr,rr
+X17 1 mov_rr,x
+X17 1C shl_rr,s          \ 0x10000000
+X17 4 sub_rr,s           \ 0xffffffc
+X16 X17 cmp_rr,rr
+x' xcall_overflow ja
+ret
+
 native callcomp
 $ callcomp !
 X3 4 mov_rr,x
@@ -1304,17 +1321,7 @@ DP X3 mov_[aa],rr
 X3 4 mov_rr,x
 1 lb call
 X3 DP mov_rr,[aa]
-X16 X0 mov_rr,rr
-X16 X3 sub_rr,rr
-\ Check d + 2^27 <= 2^28 - 4 (signed 28-bit bytes).
-X17 1 mov_rr,x
-X17 1B shl_rr,s
-X16 X17 add_rr,rr
-X17 1 mov_rr,x
-X17 1C shl_rr,s
-X17 4 sub_rr,s
-X16 X17 cmp_rr,rr
-x' xcall_overflow ja
+x' xcall_check_range call
 X16 X0 mov_rr,rr
 X16 X3 sub_rr,rr
 X16 2 shr_rr,s
@@ -1336,17 +1343,7 @@ native tailcomp
 X3 4 mov_rr,x
 1 lb call
 X3 DP mov_rr,[aa]
-X16 X0 mov_rr,rr
-X16 X3 sub_rr,rr
-\ Check d + 2^27 <= 2^28 - 4 (signed 28-bit bytes).
-X17 1 mov_rr,x
-X17 1B shl_rr,s
-X16 X17 add_rr,rr
-X17 1 mov_rr,x
-X17 1C shl_rr,s
-X17 4 sub_rr,s
-X16 X17 cmp_rr,rr
-x' xcall_overflow ja
+x' xcall_check_range call
 X16 X0 mov_rr,rr
 X16 X3 sub_rr,rr
 X16 2 shr_rr,s
