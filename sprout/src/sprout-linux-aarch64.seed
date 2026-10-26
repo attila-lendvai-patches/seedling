@@ -1412,6 +1412,92 @@ X19 pop
 X0 pop
 ret
 
+\ Die loudly if a generated call cannot reach its target.
+\ Build the message in PAD; no data addresses are emitted.
+native xcall_overflow
+X1 PAD mov_rr,aa
+X16 63 mov_rr,x
+X1 X16 mov_[rr],rl
+X1 1 add_rr,s
+X16 61 mov_rr,x
+X1 X16 mov_[rr],rl
+X1 1 add_rr,s
+X16 6C mov_rr,x
+X1 X16 mov_[rr],rl
+X1 1 add_rr,s
+X16 6C mov_rr,x
+X1 X16 mov_[rr],rl
+X1 1 add_rr,s
+X16 20 mov_rr,x
+X1 X16 mov_[rr],rl
+X1 1 add_rr,s
+X16 74 mov_rr,x
+X1 X16 mov_[rr],rl
+X1 1 add_rr,s
+X16 61 mov_rr,x
+X1 X16 mov_[rr],rl
+X1 1 add_rr,s
+X16 72 mov_rr,x
+X1 X16 mov_[rr],rl
+X1 1 add_rr,s
+X16 67 mov_rr,x
+X1 X16 mov_[rr],rl
+X1 1 add_rr,s
+X16 65 mov_rr,x
+X1 X16 mov_[rr],rl
+X1 1 add_rr,s
+X16 74 mov_rr,x
+X1 X16 mov_[rr],rl
+X1 1 add_rr,s
+X16 20 mov_rr,x
+X1 X16 mov_[rr],rl
+X1 1 add_rr,s
+X16 6F mov_rr,x
+X1 X16 mov_[rr],rl
+X1 1 add_rr,s
+X16 75 mov_rr,x
+X1 X16 mov_[rr],rl
+X1 1 add_rr,s
+X16 74 mov_rr,x
+X1 X16 mov_[rr],rl
+X1 1 add_rr,s
+X16 20 mov_rr,x
+X1 X16 mov_[rr],rl
+X1 1 add_rr,s
+X16 6F mov_rr,x
+X1 X16 mov_[rr],rl
+X1 1 add_rr,s
+X16 66 mov_rr,x
+X1 X16 mov_[rr],rl
+X1 1 add_rr,s
+X16 20 mov_rr,x
+X1 X16 mov_[rr],rl
+X1 1 add_rr,s
+X16 72 mov_rr,x
+X1 X16 mov_[rr],rl
+X1 1 add_rr,s
+X16 61 mov_rr,x
+X1 X16 mov_[rr],rl
+X1 1 add_rr,s
+X16 6E mov_rr,x
+X1 X16 mov_[rr],rl
+X1 1 add_rr,s
+X16 67 mov_rr,x
+X1 X16 mov_[rr],rl
+X1 1 add_rr,s
+X16 65 mov_rr,x
+X1 X16 mov_[rr],rl
+X1 1 add_rr,s
+X16 0A mov_rr,x
+X1 X16 mov_[rr],rl
+X1 1 add_rr,s
+X1 PAD mov_rr,aa
+X5 2 mov_rr,x
+X2 19 mov_rr,x
+sys.write syscall
+X5 1 mov_rr,x
+sys.exit syscall
+
 native callcomp
 $ callcomp !
 X3 4 mov_rr,x
@@ -1433,6 +1519,17 @@ X3 4 mov_rr,x
 X3 DP mov_rr,[aa]
 X16 X0 mov_rr,rr
 X16 X3 sub_rr,rr
+\ Check d + 2^27 <= 2^28 - 4 (signed 28-bit bytes).
+X17 1 mov_rr,x
+X17 1B shl_rr,s
+X16 X17 add_rr,rr
+X17 1 mov_rr,x
+X17 1C shl_rr,s
+X17 4 sub_rr,s
+X16 X17 cmp_rr,rr
+x' xcall_overflow ja
+X16 X0 mov_rr,rr
+X16 X3 sub_rr,rr
 X16 2 shr_rr,s
 X17 3FFFFFF mov_rr,x
 X16 X17 and_rr,rr
@@ -1450,6 +1547,17 @@ native tailcomp
 X3 4 mov_rr,x
 1 label call
 X3 DP mov_rr,[aa]
+X16 X0 mov_rr,rr
+X16 X3 sub_rr,rr
+\ Check d + 2^27 <= 2^28 - 4 (signed 28-bit bytes).
+X17 1 mov_rr,x
+X17 1B shl_rr,s
+X16 X17 add_rr,rr
+X17 1 mov_rr,x
+X17 1C shl_rr,s
+X17 4 sub_rr,s
+X16 X17 cmp_rr,rr
+x' xcall_overflow ja
 X16 X0 mov_rr,rr
 X16 X3 sub_rr,rr
 X16 2 shr_rr,s
