@@ -1,0 +1,5 @@
+output
+hex
+ascii A . cr
+decimal 255 . cr
+bye

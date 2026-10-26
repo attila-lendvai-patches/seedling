@@ -1,0 +1,5 @@
+output
+hex
+{: five [ 2 3 + literal ] }
+five . cr
+bye
