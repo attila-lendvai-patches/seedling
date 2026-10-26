@@ -19,7 +19,9 @@ output \ this must be on the first line
 \ X0 holds TOS, the top element of the data stack
 \ X19 points to the data stack (but top element is in X0)
 \ X3 is a scratch register
-\ SP is the call stack
+\ X29 is the call (shadow) stack pointer; X30 is the link
+\ register, so X29 is the highest suitable register
+\ SP is the hardware stack pointer and stays 16-byte aligned
 
 hex
 
@@ -415,12 +417,14 @@ F constant X15
 {: STRB_16,[r], ( base -- )
   5 lshift 10 or 39000000 or d,
 }
+\ These move the call-stack pointer (X29), not the hardware SP:
+\ SP must stay 16-byte aligned for the kernel.
 {: mov_from_sp ( dst -- )
-  910003E0 or d,
+  910003A0 or d,
 }
 
 {: mov_to_sp ( src -- )
-  5 lshift 91000000 or 1F or d,
+  5 lshift 91000000 or 1D or d,
 }
 
 {: movSP,[aa] ( addr -- )
@@ -508,8 +512,8 @@ F constant X15
 {: SVC D4000001 d, }
 {: int_x SVC }
 
-{: push ( reg -- ) 1F8FE0 or F81F8C00 or d, }
-{: pop ( reg -- ) F84087E0 or d, }
+{: push ( reg -- ) 1F8FA0 or F81F8C00 or d, }
+{: pop ( reg -- ) F84087A0 or d, }
 
 \ Branch instructions
 
@@ -1410,7 +1414,7 @@ DP X3 mov_[aa],rr
 X3 4 mov_rr,x
 1 label call
 X3 DP mov_rr,[aa]
-X16 F81F8FF0 mov_rr,x
+X16 F81F8FB0 mov_rr,x
 X3 X16 mov_[rr],er
 X3 4 add_rr,s
 DP X3 mov_[aa],rr
@@ -1460,7 +1464,7 @@ native }~fail
 X3 FAIL mov_rr,aa
 $ catch !
 3 label!
-SP ERR_SP movSP,[aa]	\ restore SP
+ERR_SP movSP,[aa]	\ restore call stack
 X2 pop			\ handler pointer in X2
 X2 X2 or_rr,rr		\ check for zero
 4 jnz_fs
@@ -1835,7 +1839,7 @@ rcx jmp_rr
 \ being compiled. Keep in sync with the `ret` assembler macro
 \ above.)
 native ret,
-F84087F0 xliteral
+F84087B0 xliteral
 x' d, call
 D61F0200 xliteral
 x' d, call
@@ -1876,7 +1880,7 @@ rcx rcx xor_rr,rr
 rcx push		\ 0 marker for finally frame
 ERR_SP mov_[aa],SP	\ set new ERR_SP
 rsi call_rr		\ call what follows
-SP ERR_SP movSP,[aa]	\ stack fo finally frame
+ERR_SP movSP,[aa]	\ stack for finally frame
 rcx pop			\ discard marker
 rcx pop			\ finally reference in rcx
 rdx pop			\ previous ERR_SP in rdx
@@ -1901,7 +1905,7 @@ ERR_SP mov_[aa],SP  \ set new ERR_SP
 binary			\ handler reference in rcx
 rdx rcx mov_[rr],rr	\ handler reference changed
 x' execute call		\ execute code with effects
-SP ERR_SP movSP,[aa]	\ stack to handler frame
+ERR_SP movSP,[aa]	\ stack to handler frame
 rcx pop			\ handler ptr in rcx
 rdx pop			\ previous handler addr. in rdx
 rcx rdx mov_[rr],rr	\ restore handler
@@ -2547,7 +2551,7 @@ x' >lit does
 xcode_align
 here 10 + dup FFFF and 5 lshift 10 or D2800000 or d,
 10 rshift FFFF and 5 lshift 10 or F2A00000 or d,
-F81F8FF0 d,
+F81F8FB0 d,
 14000000 }~ d,
 
 \ Close a quotation. Its body lives inline in the code stream
@@ -2560,7 +2564,7 @@ xcode_align
 dup here swap - 4 + 2 rshift 3FFFFFF and 14000000 or swap 4 - d!
 F9000260 d,
 91002273 d,
-F84087E0 d,
+F84087A0 d,
 }
 
 \ self references
@@ -3244,6 +3248,7 @@ x' cr jmp
 \ the entry point is here; X20 keeps the process stack pointer
 7 rlabel_f! \ the dictionary is ready here
 7 label!
+910003FD d, \ X29 = SP; SP stays 16-byte aligned
 
 X20 mov_from_sp
 

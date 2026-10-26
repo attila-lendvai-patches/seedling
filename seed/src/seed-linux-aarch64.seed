@@ -19,7 +19,9 @@ output \ this must be on the first line
 \ X0 holds TOS, the top element of the data stack
 \ X19 points to the data stack (but top element is in X0)
 \ X3 is a scratch register
-\ SP is the call stack
+\ X29 is the call (shadow) stack pointer; X30 is the link
+\ register, so X29 is the highest suitable register
+\ SP is the hardware stack pointer and stays 16-byte aligned
 
 hex
 
@@ -421,12 +423,14 @@ F constant X15
 {: STRB_16,[r], ( base -- )
   5 lshift 10 or 3900 x32,
 }
+\ These move the call-stack pointer (X29), not the hardware SP:
+\ SP must stay 16-byte aligned for the kernel.
 {: mov_from_sp ( dst -- )
-  3E0 or 9100 x32,
+  3A0 or 9100 x32,
 }
 
 {: mov_to_sp ( src -- )
-  5 lshift 1F or 9100 x32,
+  5 lshift 1D or 9100 x32,
 }
 
 {: movSP,[aa] ( addr -- )
@@ -503,8 +507,8 @@ F constant X15
 {: SVC 1 D400 x32, }
 {: int_x SVC }
 
-{: push ( reg -- ) 8FE0 or F81F x32, }
-{: pop ( reg -- ) 87E0 or F840 x32, }
+{: push ( reg -- ) 8FA0 or F81F x32, }
+{: pop ( reg -- ) 87A0 or F840 x32, }
 
 \ Branch instructions
 
@@ -1184,7 +1188,7 @@ DP X3 mov_[aa],rr
 X3 4 mov_rr,x
 1 lb call
 X3 DP mov_rr,[aa]
-X16 8FF0 mov_rr,x
+X16 8FB0 mov_rr,x
 X16 F81F MOVK_r,u16,
 X3 X16 mov_[rr],er
 X3 4 add_rr,s
@@ -1238,7 +1242,7 @@ native }~fail
 2 label
 X3 FAIL mov_rr,aa
 3 label
-SP ERR_SP movSP,[aa]	\ restore SP
+ERR_SP movSP,[aa]	\ restore call stack
 X2 pop			\ handler pointer in X2
 X3 X2 cmp_rr,rr	\ compare with current effect's
 X19 pop			\ X19 = previous handler address
@@ -1592,7 +1596,7 @@ ret
 \ being compiled. Keep in sync with the `ret` assembler macro
 \ above.)
 native ret,
-87F0 xliteral
+87B0 xliteral
 F840 xliteral
 x' x32, call
 0200 xliteral
@@ -1642,13 +1646,13 @@ ERR_SP mov_[aa],SP  \ set new ERR_SP
 binary			\ handler reference in X3
 X2 X3 mov_[rr],rr	\ handler reference changed
 x' execute call		\ execute code with effects
-SP ERR_SP movSP,[aa]	\ stack to handler frame
+ERR_SP movSP,[aa]	\ stack to handler frame
 X3 pop			\ handler ptr in X3
 X2 pop			\ previous handler addr. in X2
 X3 X2 mov_[rr],rr	\ restore handler
 X3 pop
 ERR_SP X3 mov_[aa],rr	\ restore ERR_SP
-SP xcell add_rr,s		\ discard data stack pointer
+X29 xcell add_rr,s	\ discard data stack pointer
 ret
 
 \ disjunction combinator
@@ -1866,7 +1870,7 @@ x32,
 dup 5 lshift 10 or
 swap B rshift F2A0 or
 x32,
-8FF0 F81F x32,
+8FB0 F81F x32,
 0 1400 }~ x32,
 
 \ Close a quotation. Its body lives inline in the code stream
@@ -1882,7 +1886,7 @@ dup FFFF and swap drop
 1400 r> x32!
 0260 F900 x32,
 2273 9100 x32,
-87E0 F840 x32,
+87A0 F840 x32,
 }
 
 \ self references
@@ -2282,6 +2286,7 @@ input
 
 7 rlabel \ the dictionary is ready here
 7 label
+3FD 9100 x32, \ X29 = SP; SP stays 16-byte aligned
 
 X0 A mov_rr,x
 BASE X0 mov_[aa],rl \ initialize numeral base
