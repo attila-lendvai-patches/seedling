@@ -2293,7 +2293,7 @@ here 8 + ,
 \ postpone colon definition
 {: postpone
 create redefine
-'id tailcomp 3 }~ allot \ WTF? TODO: investigate
+'id tailcomp }
 
 \ search vocabulary
 {: search ( a -( pad fail )- a )
@@ -2312,14 +2312,16 @@ here ' compile 'id|
 
 \ postponed colon definition
 {: {::
-word find drop \ address of jmp instruction
-1+ \ address of jmp relative address
-dup
-4 + \ address of jmp anchor
-here swap -
-swap
+word find drop          \ token of the placeholder branch
 dup xicache_mark
-! \ TODO: adjust interpret mode behavior address, too
+dup
+here swap -             \ forward byte offset
+2 rshift                \ branch offset
+swap >r                 \ offset ; r: token
+dup FFFF and            \ offset, low16
+swap 10 rshift 3FF and
+1400 or                 \ low16, high16
+r> x32!                 \ patch the B at the token
 here ' compile 'id|
 }~ drop
 
