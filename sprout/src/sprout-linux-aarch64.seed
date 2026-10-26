@@ -515,6 +515,15 @@ F constant X15
 {: push ( reg -- ) 1F8FA0 or F81F8C00 or d, }
 {: pop ( reg -- ) F84087A0 or d, }
 
+\ Instruction cache maintenance.  Code written to the heap
+\ must be cleaned to the point of unification and the
+\ instruction cache invalidated before it can be executed.
+{: DC_CVAU ( reg -- ) D50B7B20 or d, }
+{: IC_IVAU ( reg -- ) D50B7520 or d, }
+{: DSB_ISH D5033B9F d, }
+{: ISB D5033FDF d, }
+{: NOT_r,r, ( reg -- ) dup 10 lshift swap or AA2003E0 or d, }
+
 \ Branch instructions
 
 {: B.   ( addr  -- ) 6 0 label_offset 1400 0 rlabel, }
@@ -1047,6 +1056,7 @@ xcell+ dup    constant ERR_SP
 xcell+ dup    constant CONTEXT
 xcell+ dup    constant CURRENT
 xcell+ dup    constant DICTIONARY
+xcell+ dup    constant XSYNC_FROM \ icache sync low-water mark
 xcell+ dup    constant FRAME
 xcell+ dup    constant ENV
 xcell+ dup    constant BASE        \ of the number reader
@@ -1458,6 +1468,57 @@ $ endcomp !
 x' tailcomp call
 2 jmp_f
 
+\ Mark a patched instruction as needing an icache sync.
+native xicache_mark ( a -- )
+binary
+X16 XSYNC_FROM mov_rr,[aa]
+X16 rcx cmp_rr,rr
+8 jb_fs
+XSYNC_FROM rcx mov_[aa],rr
+8 rlabel_f!
+ret
+
+\ Synchronize the instruction cache with code emitted since
+\ the last sync.  XSYNC_FROM is the low-water mark: it is
+\ lowered when a previously emitted instruction is patched.
+\ A 16-byte stride reaches every cache line because 16 bytes
+\ is the smallest possible line size.
+native xicache_sync
+rax push
+rsi push
+rdx push
+rcx push
+X17 DP mov_rr,[aa]
+X16 XSYNC_FROM mov_rr,[aa]
+X16 X17 cmp_rr,rr
+8 jae_fs
+X1 0F mov_rr,x
+X1 NOT_r,r,
+X16 X1 and_rr,rr
+9 label!
+X16 DC_CVAU
+X16 10 add_rr,s
+X16 X17 cmp_rr,rr
+9 label jb
+DSB_ISH
+X16 XSYNC_FROM mov_rr,[aa]
+X16 X1 and_rr,rr
+A label!
+X16 IC_IVAU
+X16 10 add_rr,s
+X16 X17 cmp_rr,rr
+A label jb
+DSB_ISH
+ISB
+8 rlabel_f!
+X17 DP mov_rr,[aa]
+XSYNC_FROM X17 mov_[aa],rr
+rcx pop
+rdx pop
+rsi pop
+rax pop
+ret
+
 native }~fail
 2 rlabel_f!
 2 label!
@@ -1470,6 +1531,7 @@ X2 X2 or_rr,rr		\ check for zero
 4 jnz_fs
 X2 pop			\ finally pointer in X2
 X3 push			\ save current effect
+x' xicache_sync call
 X2 call_rr		\ execute finally
 X3 pop			\ restore current effect
 X0 pop
@@ -1488,6 +1550,7 @@ ERR_SP X0 mov_[aa],rr	\ restore previous ERR_SP
 X3 X19 mov_rr,rr	\ X3 = current handler address
 X19 pop			\ restore data stack pointer
 X0 X19 mov_rr,[rr]	\ restore TOS
+x' xicache_sync call
 X3 jmp_rr		\ continue with handler
 
 x' endcomp does
@@ -1867,6 +1930,7 @@ ret
 native execute
 $ exec !
 binary
+x' xicache_sync call
 rcx jmp_rr
 
 \ register computation to be executed finally
@@ -1885,6 +1949,7 @@ rcx pop			\ discard marker
 rcx pop			\ finally reference in rcx
 rdx pop			\ previous ERR_SP in rdx
 ERR_SP rdx mov_[aa],rr	\ restore previous ERR_SP
+x' xicache_sync call
 rcx jmp_rr		\ continue with finally
 
 \ handle effect
@@ -2561,7 +2626,9 @@ F81F8FB0 d,
 \ branch targets and displacements, are 4-byte units.
 {: }}
 xcode_align
-dup here swap - 4 + 2 rshift 3FFFFFF and 14000000 or swap 4 - d!
+dup here swap - 4 + 2 rshift 3FFFFFF and 14000000 or swap 4 -
+dup xicache_mark
+d!
 F9000260 d,
 91002273 d,
 F84087A0 d,
@@ -3010,7 +3077,9 @@ word find drop \ target address of the branch instruction
 dup
 here swap -
 2 rshift 3FFFFFF and 14000000 or
-swap d!
+swap
+dup xicache_mark
+d!
 here ' compile 'id|
 }~ drop
 
@@ -3264,6 +3333,7 @@ X5 X2 mov_rr,rr
 sys.brk syscall \ extend the break over the data stack
 DP X2 mov_[aa],rr \ initialize dictionary end
 DICTIONARY X2 mov_[aa],rr \ and beginning
+XSYNC_FROM X2 mov_[aa],rr \ no emitted code yet
 X3 xcurrent @ mov_rr,aa \ initial vocabulary
 X2 SPROUT mov_rr,aa \ sprout vocabulary pointer
 X2 X3 mov_[rr],rr \ initialize it
