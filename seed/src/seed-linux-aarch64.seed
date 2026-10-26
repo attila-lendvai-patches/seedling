@@ -23,6 +23,55 @@ output \ this must be on the first line
 
 hex
 
+\ [port] IMAGE BASE
+\ The target image is loaded at ximage_base and must stay below
+\ 18000 (the system variables). Absolute addresses are emitted as
+\ ximage_base + low16(image offset).
+10000 constant ximage_base
+ximage_base 10 rshift constant ximage_base_hi
+
+\ [port] TARGET GEOMETRY (AArch64)
+\ Values describe the target, not the compiling Seed. Offsets are
+\ in target bytes; the host may have a different cell size.
+\
+\   xcell_bits  target cell size in bits
+\   xcelllog    log2(xcell); used by xcells
+\   xcell       target cell size in bytes
+\   xcell1-     xcell - 1
+\   xcell_mask  align-up mask
+\   xcells      ( n -- n*xcell )
+\   xalign      ( a -- a' ) align address up to a cell
+\   xcell+      ( a -- a+xcell )
+\   xcode_align instruction alignment in bytes
+\
+\ Word entry layout (entry = link cell; 'current' points here):
+\   +0              link
+\   +xcell          token / xt (code address)
+\   +2 cells        compile-mode behavior
+\   +3 cells        zero-terminated name
+\   code ...        aligned to xcode_align
+\
+\ xword_comp is the compile-behavior field offset; xname_from_token is
+\ the name offset relative to the token cell.
+\ xcall_size is the size of the stack-call sequence; xquote_open_size
+\ is the size of the quotation opener emitted by x{{.
+\ xrel_size is the width of a relative branch field.
+40 constant xcell_bits          \ 64 bits
+3  constant xcelllog            \ for shifts
+xcell_bits 3 rshift constant xcell
+xcell 1 - constant xcell1-      \ 7
+xcell1- invert constant xcell_mask      \ FFF8
+{: xcells  xcelllog lshift }
+{: xalign  xcell1- + xcell_mask and }
+{: xcell+  xcell + }
+
+4 constant xcode_align
+xcell 2 * constant xword_comp
+xcell 2 * constant xname_from_token
+10 constant xcall_size
+10 constant xquote_open_size
+4 constant xrel_size
+
 \ Auxiliary functions for the Assembler
 
 \ execute n times
@@ -48,7 +97,7 @@ hex
 {: q,		{ lsb c, } 7 times c, }
 
 \ 64-bit virtual address comma
-{: a,		w, 1 w, 0 d, }
+{: a,		w, ximage_base_hi w, 0 d, }
 
 \ 16-bit little-endian fetch
 {: w@		dup c@ swap 1+ c@ 8 lshift or }
@@ -174,7 +223,7 @@ create labels
 \ half of the 0x0001xxxx absolute base address, and store the
 \ location of the lower half to be emitted by our label_f!
 \ counterpart later.
-{: label_f	here swap label_cell ! 0 w, 1 w, 0 d, }
+{: label_f	here swap label_cell ! 0 w, ximage_base_hi w, 0 d, }
 
 \ Emit absolute forward label (only the lower 16 bits of it!)
 {: label_f!	label@ $ swap w! }
@@ -467,17 +516,17 @@ F constant X15
 \ x86-style branch names
 
 {: call ( addr -- )
-  $ 10 + 10000 + X16 swap mov_rr,aa
+  $ xcall_size + ximage_base + X16 swap mov_rr,aa
   X16 push
   B.
 }
 {: call_f ( label -- )
-  $ 10 + 10000 + X16 swap mov_rr,aa
+  $ xcall_size + ximage_base + X16 swap mov_rr,aa
   X16 push
   B._f
 }
 {: call_rr ( reg -- )
-  $ 10 + 10000 + X16 swap mov_rr,aa
+  $ xcall_size + ximage_base + X16 swap mov_rr,aa
   X16 push
   5 lshift D61F0000 or d,
 }
@@ -624,14 +673,15 @@ DD constant sys.execve
 
 \ assembler macros
 
+
 {: tos_load             \ top of data stack -> X0
-X19 8 sub_rr,s
+X19 xcell sub_rr,s
 X0 X19 mov_rr,[rr]
 }
 
 {: tos_store            \ X0 -> data stack
 X19 X0 mov_[rr],rr
-X19 8 add_rr,s
+X19 xcell add_rr,s
 }
 
 {: binary
@@ -648,7 +698,7 @@ X0 X3 cmp_rr,rr
 create xcurrent 0 w,
 
 {: xlink ( a -- a )
-8 align
+xcell align
 { 0<> $ swap }~ a,
 { $ swap }~ q,
 }~|
@@ -661,15 +711,15 @@ w@ 0<>
 offset @ +
 'self &
 dup
-8 +
+xcell+
 }
 
 {: xsearch ( a -( pad fail )- a )
-xtraverse& 10 +
+xtraverse& xname_from_token +
 pad s= cut }~ nip
 
 {: xfind ( -( pad fail )- a )
-xcurrent xsearch 10 }~ -
+xcurrent xsearch xname_from_token }~ -
 
 \ target tick
 {: x'
@@ -697,33 +747,34 @@ word
 pad
 s,
 0 c,
-4 align
+xcode_align align
 $ swap w!
 }
 
 \ target literal
 {: xliteral ( x -( heap )- )
-4 align
+xcode_align align
 tos_store
 X0 swap mov_rr,x
 }
 
 \ target address literal
 {: xaliteral ( a -( heap )- )
+xcode_align align
 tos_store
 X0 swap mov_rr,aa
 }
 
 {: x{{ ( -( heap )- a )
-4 align
-$ 10 + 10000 + X16 swap mov_rr,aa
+xcode_align align
+$ xquote_open_size + ximage_base + X16 swap mov_rr,aa
 X16 push
 14000000 d,
 }~ here
 
 {: x}} ( a -( heap )- )
-4 align
-dup here swap - 4 + 2 rshift 3FFFFFF and 14000000 or swap 4 - d!
+xcode_align align
+dup here swap - xrel_size + 2 rshift 3FFFFFF and 14000000 or swap xrel_size - d!
 tos_store
 X0 pop
 }
@@ -835,20 +886,20 @@ drop
 {: field here swap ! }
 
 \ system variables
-18000 constant SEED
-18008 constant DP
-18010 constant TIB
-18018 constant FAIL
-18020 constant ERR_SP
-18028 constant DICTIONARY
-18030 constant BASE
-18031 constant EMIT_BUF
-18032 constant PAD
-   20 constant PAD_LEN
-18052 constant TIB_BUF
-  100 constant TIB_BUF_LEN
-
-18158 constant EFFECTS
+18000  dup    constant SEED
+xcell+ dup    constant DP
+xcell+ dup    constant TIB
+xcell+ dup    constant FAIL
+xcell+ dup    constant ERR_SP
+xcell+ dup    constant DICTIONARY
+xcell+ dup    constant BASE        \ of the number reader
+1+     dup    constant EMIT_BUF    \ for the write syscall
+1+     dup    constant PAD         \ temp buffer
+20            constant PAD_LEN
+PAD_LEN + dup constant TIB_BUF     \ line edit buffer
+100           constant TIB_BUF_LEN
+TIB_BUF_LEN + xalign
+              constant EFFECTS
 
 \ effect pointer for cross-compiling
 EFFECTS variable effects
@@ -890,7 +941,7 @@ ret
 \ change compile mode behavior
 {: does
 xlast
-10 +
+xword_comp +
 offset @ +
 w! }
 
@@ -905,11 +956,11 @@ xfind
 dup
 w@ \ interpret mode behavior
 swap
-8 +
+xcell+
 w@ \ compile mode behavior
 does
 xlast
-8 +
+xcell+
 offset @ +
 w! }
 
@@ -971,7 +1022,7 @@ B7 w,
 \ e_entry: Entry point, lower 16 bits
 f_EntryPoint field
 \ and the remaining 48 bits; the virtual address is 0x001xxxx
-0 w, 1 w, 0 d,
+0 w, ximage_base_hi w, 0 d,
 
 \ e_phoff: file offset of the program headers
 f_ProgramHeaders field
@@ -1017,10 +1068,10 @@ $ f_ProgramHeaders @ w!
 0 q,
 
 \ p_vaddr: Virtual address, i.e. 10000
-0 w, 1 w, 0 d,
+0 w, ximage_base_hi w, 0 d,
 
 \ p_paddr: Physical address (ignored)
-0 w, 1 w, 0 d,
+0 w, ximage_base_hi w, 0 d,
 
 \ p_filesz: size in file
 f_SizeInFile field
@@ -1238,11 +1289,11 @@ X0 DP mov_rr,[aa]
 ret
 
 native ,
-X3 8 mov_rr,x
+X3 xcell mov_rr,x
 1 lb call
 X3 DP mov_rr,[aa]
 X3 X0 mov_[rr],rr
-X3 8 add_rr,s
+X3 xcell add_rr,s
 DP X3 mov_[aa],rr
 tos_load
 ret
@@ -1402,18 +1453,18 @@ effect input
 \ stack manipulation primitives
 
 native drop
-X19 8 sub_rr,s
+X19 xcell sub_rr,s
 X0 X19 mov_rr,[rr]
 ret
 
 native nip
-X19 8 sub_rr,s
+X19 xcell sub_rr,s
 ret
 
 native swap
 binary
 X19 X3 mov_[rr],rr
-X19 8 add_rr,s
+X19 xcell add_rr,s
 ret
 
 native dup
@@ -1422,15 +1473,15 @@ ret
 
 native over
 binary
-X19 8 add_rr,s
+X19 xcell add_rr,s
 X19 X3 mov_[rr],rr
-X19 8 add_rr,s
+X19 xcell add_rr,s
 ret
 
 native third
 X3 X19 mov_rr,rr
 tos_store
-X3 10 sub_rr,s
+X3 2 xcells sub_rr,s
 X0 X3 mov_rr,[rr]
 ret
 
@@ -1491,9 +1542,9 @@ binary			\ effect reference in X3
 X3 C add_rr,s
 X2 X3 mov_rr,[rr]	\ handler pointer in X2
 3 label
-X19 10 sub_rr,s		\ data stack pointer to be saved
+X19 2 xcells sub_rr,s		\ data stack pointer to be saved
 X19 push		\ save data stack pointer
-X19 10 add_rr,s		\ current data stack pointer
+X19 2 xcells add_rr,s		\ current data stack pointer
 X3 ERR_SP mov_rr,[aa]	\ ERR_SP in X3
 X3 push		\ save previous ERR_SP
 X3 X2 mov_rr,[rr]	\ previous handler address in X3
@@ -1509,7 +1560,7 @@ X2 pop			\ previous handler addr. in X2
 X3 X2 mov_[rr],rr	\ restore handler
 X3 pop
 ERR_SP X3 mov_[aa],rr	\ restore ERR_SP
-SP 8 add_rr,s		\ discard data stack pointer
+SP xcell add_rr,s		\ discard data stack pointer
 ret
 
 \ disjunction combinator
@@ -1536,9 +1587,9 @@ x' endcomp does
 native cut
 X5 ERR_SP mov_rr,[aa]
 X3 X5 mov_rr,[rr]	\ handler ptr in X3
-X5 8 add_rr,s
+X5 xcell add_rr,s
 X2 X5 mov_rr,[rr]	\ previous handler reference in X2
-X5 8 add_rr,s
+X5 xcell add_rr,s
 X3 X2 mov_[rr],rr	\ restore previous handler
 X3 X5 mov_rr,[rr]	\ previous ERR_SP in X3
 ERR_SP X3 mov_[aa],rr	\ restore previous ERR_SP
@@ -1557,14 +1608,14 @@ X2 FAIL mov_rr,aa
 X2 push		\ save failure handler pointer
 X2 X3	mov_[rr],rr	\ set new handler
 ERR_SP mov_[aa],SP	\ set new ERR_SP
-X3 18 mov_rr,x		\ frame offset
+X3 3 xcells mov_rr,x		\ frame offset
 X16 mov_from_sp
 X3 X16 add_rr,rr	\ add stack pointer
 3 label
 X3 push
 X1 call_rr		\ call what follows
 X3 pop
-X3 8 add_rr,s
+X3 xcell add_rr,s
 X1 X3 mov_rr,[rr]
 3 lb jmp
 
@@ -1581,15 +1632,15 @@ set_carry_add
 ret
 
 native cell-
-X0 8 sub_rr,s
+X0 xcell sub_rr,s
 ret
 
 native cell+
-X0 8 add_rr,s
+X0 xcell add_rr,s
 ret
 
 native cells
-X0 3 shl_rr,s
+X0 xcelllog shl_rr,s
 ret
 
 \ binary arithmetic primitives
@@ -1618,7 +1669,7 @@ binary
 X2 X2 xor_rr,rr
 X3 div_rr
 X19 X2 mov_[rr],rr
-X19 8 add_rr,s
+X19 xcell add_rr,s
 ret
 
 \ bitwise primitives
@@ -1648,14 +1699,14 @@ ret
 
 native lshift
 binary
-X3 3F cmp_rr,s
+X3 xcell_bits 1- cmp_rr,s
 3 lb jae
 X0 shl_rr,cl
 ret
 
 native rshift
 binary
-X3 3F cmp_rr,s
+X3 xcell_bits 1- cmp_rr,s
 3 lb jae
 X0 shr_rr,cl
 ret
@@ -1910,6 +1961,7 @@ here cell+ cell+ pad length + 1+ ,
 pad s, 0 c,
 here 3 + 3 and 3 xor allot
 here last 8 + !
+\ payload = code + literal(18) + ret(8)
 here 20 +
 literal
 ret, }
@@ -2079,7 +2131,7 @@ cell- dup @ current ! dp }~ !
 
 \ output data stack content
 native .s
-X3 effects @ 8 + mov_rr,aa \ stack bottom
+X3 effects @ xcell + mov_rr,aa \ stack bottom
 3 label
 X19 X3 cmp_rr,rr
 x' cr jc
@@ -2089,7 +2141,7 @@ tos_store
 X0 X3 mov_rr,[rr]
 x' . call
 X3 pop
-X3 8 add_rr,s
+X3 xcell add_rr,s
 3 lb jmp
 4 rlabel
 tos_store
@@ -2128,7 +2180,7 @@ FAIL X3 mov_[aa],rr
 X19 X0 mov_[rr],rr	\ save TOS
 X19 push		\ save data stack ptr.
 X3 mov_from_sp	\ return stack ptr. to X3
-X3 18 sub_rr,s		\ bottom of handler frame
+X3 3 xcells sub_rr,s		\ bottom of handler frame
 X3 push		\ circular reference
 X3 6 lb mov_rr,aa	\ this handler's address
 X3 push		\ circular reference

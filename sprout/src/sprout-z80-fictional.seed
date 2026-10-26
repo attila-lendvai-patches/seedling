@@ -22,6 +22,25 @@ output \ this must be the first line
 
 hex
 
+\ [port] TARGET GEOMETRY (Z80)
+\ 16-bit cells (2 bytes), little-endian, byte-addressed, 64K.
+\ The image is a raw binary loaded at 0; there is no ELF base.
+\ Code is byte-aligned, so no instruction alignment is needed.
+\
+\ Word entry (threaded; no token/comp cells):
+\   +0              link (16-bit)
+\   +xword_name     zero-terminated name
+\   after the name  threaded code / payload
+\   `create` appends a call to `dat,` (the data interpreter).
+\
+\ `jr` displacements are xrel_size (1) byte; `jp`/`call` use
+\ 2-byte absolute addresses. The `8 align`s in Part II align
+\ threading and restart data, not instructions.
+2 constant xcell
+{: xcell+ xcell + }
+xcell constant xword_name
+1 constant xrel_size
+
 \ split off least significant byte
 {: 100u/mod	dup FF and swap 8 rshift }
 
@@ -319,7 +338,7 @@ w@ 0<>
 offset @ +
 'self &
 dup
-2 +
+xword_name +
 }
 
 {: xsearch ( a -( pad fail )- a )
@@ -359,7 +378,7 @@ s,
 lits @ w, 0 c, }~ here
 
 {: x}} ( a -( heap )- )
-dup here swap - swap 1- }~ c!
+dup here swap - swap xrel_size - }~ c!
 
 \ target pointer to comma
 0 variable comma
@@ -466,18 +485,18 @@ execute
 28 constant push_rst
 
 \ system variables
-2000 constant DP
-2002 constant TIB
-2004 constant FAIL
-2006 constant ERR_SP
-2008 constant CONTEXT
-200A constant CURRENT
-200C constant SEED
-200E constant FRAME
-2010 constant BASE
-2011 constant PAD
+2000 dup constant DP
+xcell+ dup constant TIB
+xcell+ dup constant FAIL
+xcell+ dup constant ERR_SP
+xcell+ dup constant CONTEXT
+xcell+ dup constant CURRENT
+xcell+ dup constant SEED
+xcell+ dup constant FRAME
+xcell+ dup constant BASE
+1+     dup constant PAD
   20 constant PAD_LEN
-2031 constant DICTIONARY
+PAD_LEN + constant DICTIONARY
 
 \ memory layout
 C000 constant STK_BOT
@@ -543,7 +562,7 @@ next }
 \ change compile-time behavior
 {: does
 xlast
-2 +
+xword_name +
 offset @ +
 skipstr
 w! }

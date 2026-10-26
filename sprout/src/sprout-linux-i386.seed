@@ -23,6 +23,13 @@ output \ this must be on the first line
 
 hex
 
+\ [port] IMAGE BASE
+\ The target image is loaded at 10000 and must stay below 18000
+\ (the system variables). Absolute addresses are 0001xxxx, so
+\ their high 16 bits are 1. Keep this a 16-bit-safe literal:
+\ a 16-bit Seed must be able to build this source.
+1 constant ximage_base_hi
+
 \ Auxiliary functions for the Assembler
 
 \ execute n times
@@ -48,7 +55,7 @@ hex
 {: q,		{ lsb c, } 7 times c, }
 
 \ 32-bit virtual address comma
-{: a,		w, 1 w, }
+{: a,		w, ximage_base_hi w, }
 
 \ 16-bit little-endian fetch
 {: w@		dup c@ swap 1+ c@ 8 lshift or }
@@ -149,7 +156,7 @@ create labels
 \ half of the 0x0001xxxx absolute base address, and store the
 \ location of the lower half to be emitted by our label_f!
 \ counterpart later.
-{: label_f,	here swap label_cell ! 0 w, 1 w, }
+{: label_f,	here swap label_cell ! 0 w, ximage_base_hi w, }
 
 \ Emit absolute forward label (only the lower 16 bits of it!)
 {: label_f!	label $ swap w! }
@@ -373,26 +380,44 @@ ebx pop
 
 \ assembler macros
 
-20 constant xcell_bits		\ 32 bits
-2  constant xcelllog		\ for shifts
-xcell_bits 3 rshift
-   constant xcell		\ byte size of the target's word
-xcell 1 -
-   constant xcell1-		\ 3
-xcell1- invert 1+
-   constant xcell_mask          \ FFFC
+\ [port] TARGET GEOMETRY
+\ Values describe the target, not the compiling Sprout. Offsets are
+\ in target bytes; the host may have a different cell size.
+\
+\   xcell_bits  target cell size in bits
+\   xcelllog    log2(xcell); used by xcells
+\   xcell       target cell size in bytes
+\   xcell1-     xcell - 1
+\   xcell_mask  align-up mask
+\   xcells      ( n -- n*xcell )
+\   xalign      ( a -- a' ) align address up to a cell
+\   xcell+      ( a -- a+xcell )
+\
+\ Word entry layout (entry = link cell; 'current' points here):
+\   +0              link
+\   +xcell          token / xt (code address)
+\   +2 cells        compile-mode behavior
+\   +3 cells        zero-terminated name
+\   code ...        no instruction alignment on x86
+\
+\ Absolute addresses are 0001xxxx (image base 10000).
+\ xword_comp is the compile-behavior field offset; xname_from_token is
+\ the name offset relative to the token cell.
+\ xrel_size is the width of a relative branch displacement field.
+20 constant xcell_bits          \ 32 bits
+2  constant xcelllog            \ for shifts
+xcell_bits 3 rshift constant xcell
+xcell 1 - constant xcell1-      \ 3
+xcell1- invert 1+ constant xcell_mask   \ [trap] -xcell+1:
+\   xalign(18152) is 18159, not 18158. Kept byte-identical in C1;
+\   normalized in the next commit.
+{: xcells  xcelllog lshift }
+{: xalign  xcell1- + xcell_mask and }
+{: xcell+  xcell + }
 
-{: xcells
-  xcelllog lshift		\ 8 *
-}
-
-{: xalign
-  xcell1- + xcell_mask and
-}
-
-{: xcell+
-  xcell +
-}
+xcell 2 * constant xword_comp
+xcell 2 * constant xname_from_token
+4 constant xrel_size
 
 {: tos_load               \ top of data stack -> eax
 ebx xcell sub_rr,s
@@ -466,11 +491,11 @@ xcell+
 }
 
 {: xsearch ( a -( pad fail )- a )
-xtraverse& 8 +
+xtraverse& xname_from_token +
 pad s= cut }~ nip
 
 {: xfind ( -( pad fail )- a )
-xcurrent xsearch 8 }~ -
+xcurrent xsearch xname_from_token }~ -
 
 {: undef ( -( pad emit )- )
 pad s. "  undefined" s. cr }~ bye
@@ -527,7 +552,7 @@ E8 c, 0 d, \ call forward
 }~ here
 
 {: x}} ( a -( heap )- )
-dup here swap - swap 4 - w!
+dup here swap - swap xrel_size - w!
 tos_store
 eax pop
 }
@@ -713,7 +738,7 @@ ret
 \ change compile mode behavior
 {: does
 xlast
-8 +
+xword_comp +
 offset @ +
 w! }
 
@@ -793,7 +818,7 @@ create ELF
 
 \ e_entry
 f_EntryPoint field
-0 w, 1 w,
+0 w, ximage_base_hi w,
 
 \ e_phoff
 f_ProgramHeaders field
@@ -837,10 +862,10 @@ $ f_ProgramHeaders @ w!
 0 d,
 
 \ p_vaddr: 10000
-0 w, 1 w,
+0 w, ximage_base_hi w,
 
 \ p_paddr
-0 w, 1 w,
+0 w, ximage_base_hi w,
 
 \ p_filesz
 f_SizeInFile field
@@ -2358,6 +2383,7 @@ current @ !
 here cell+ cell+ pad length + 1+ ,
 ' callcomp ,
 pad s, 0 c,
+\ payload = code + literal(A) + ret(1)
 here B +
 literal
 ret, }

@@ -23,6 +23,55 @@ output \ this must be on the first line
 
 hex
 
+\ [port] IMAGE BASE
+\ The target image is loaded at ximage_base and must stay below
+\ 18000 (the system variables). Absolute addresses are emitted as
+\ ximage_base + low16(image offset).
+10000 constant ximage_base
+ximage_base 10 rshift constant ximage_base_hi
+
+\ [port] TARGET GEOMETRY (AArch64)
+\ Values describe the target, not the compiling Sprout. Offsets are
+\ in target bytes; the host may have a different cell size.
+\
+\   xcell_bits  target cell size in bits
+\   xcelllog    log2(xcell); used by xcells
+\   xcell       target cell size in bytes
+\   xcell1-     xcell - 1
+\   xcell_mask  align-up mask
+\   xcells      ( n -- n*xcell )
+\   xalign      ( a -- a' ) align address up to a cell
+\   xcell+      ( a -- a+xcell )
+\   xcode_align instruction alignment in bytes
+\
+\ Word entry layout (entry = link cell; 'current' points here):
+\   +0              link
+\   +xcell          token / xt (code address)
+\   +2 cells        compile-mode behavior
+\   +3 cells        zero-terminated name
+\   code ...        aligned to xcode_align
+\
+\ xword_comp is the compile-behavior field offset; xname_from_token is
+\ the name offset relative to the token cell.
+\ xcall_size is the size of the stack-call sequence, xquote_open_size
+\ the size of the quotation opener. xrel_size is the width of a
+\ relative branch field.
+40 constant xcell_bits          \ 64 bits
+3  constant xcelllog            \ for shifts
+xcell_bits 3 rshift constant xcell
+xcell 1 - constant xcell1-      \ 0007
+xcell1- invert constant xcell_mask      \ FFF8
+{: xcells  xcelllog lshift }
+{: xalign  xcell1- + xcell_mask and }
+{: xcell+  xcell + }
+
+4 constant xcode_align
+xcell 2 * constant xword_comp
+xcell 2 * constant xname_from_token
+10 constant xcall_size
+10 constant xquote_open_size
+4 constant xrel_size
+
 \ Auxiliary functions for the Assembler
 
 \ execute n times
@@ -48,7 +97,7 @@ hex
 {: q,		{ lsb c, } 7 times c, }
 
 \ 64-bit virtual address comma
-{: a,		w, 1 w, 0 d, }
+{: a,		w, ximage_base_hi w, 0 d, }
 
 \ 16-bit little-endian fetch
 {: w@		dup c@ swap 1+ c@ 8 lshift or }
@@ -184,7 +233,7 @@ create labels
 \ half of the 0x0001xxxx absolute base address, and store the
 \ location of the lower half to be emitted by our label_f!
 \ counterpart later.
-{: label_f	here swap label_cell ! 0 w, 1 w, 0 d, }
+{: label_f	here swap label_cell ! 0 w, ximage_base_hi w, 0 d, }
 
 \ Emit absolute forward label (only the lower 16 bits of it!)
 {: label_f!	label $ swap w! }
@@ -510,17 +559,17 @@ F constant X15
 \ x86-compatible branch names
 
 {: call ( addr -- )
-  $ 10 + 10000 + X16 swap mov_rr,aa
+  $ xcall_size + ximage_base + X16 swap mov_rr,aa
   X16 push
   B.
 }
 {: call_f ( label -- )
-  $ 10 + 10000 + X16 swap mov_rr,aa
+  $ xcall_size + ximage_base + X16 swap mov_rr,aa
   X16 push
   B._f
 }
 {: call_rr ( reg -- )
-  $ 10 + 10000 + X16 swap mov_rr,aa
+  $ xcall_size + ximage_base + X16 swap mov_rr,aa
   X16 push
   5 lshift D61F0000 or d,
 }
@@ -674,26 +723,6 @@ DD constant sys.execve
 
 \ assembler macros
 
-40 constant xcell_bits		\ 64 bits
-3  constant xcelllog		\ for shifts
-xcell_bits xcelllog rshift
-   constant xcell		\ byte size of the target's word
-xcell 1 -
-   constant xcell1-		\ 0007
-xcell1- invert
-   constant xcell_mask          \ FFF8
-
-{: xcells
-  xcelllog lshift		\ 8 *
-}
-
-{: xalign
-  xcell1- + xcell_mask and
-}
-
-{: xcell+
-  xcell +
-}
 
 {: tos_load               \ top of data stack -> rax
 rbx xcell sub_rr,s
@@ -809,11 +838,11 @@ xcell+
 }
 
 {: xsearch ( a -( pad fail )- a )
-xtraverse& 10 +
+xtraverse& xname_from_token +
 pad s= cut }~ nip
 
 {: xfind ( -( pad fail )- a )
-xcurrent xsearch 10 }~ -
+xcurrent xsearch xname_from_token }~ -
 
 {: undef ( -( pad emit )- )
 pad s. "  undefined" s. cr }~ bye
@@ -856,34 +885,34 @@ word
 pad
 s,
 0 c,
-4 align
+xcode_align align
 $ swap w!
 }
 
 \ target literal
 {: xliteral ( x -( heap )- )
-4 align
+xcode_align align
 tos_store
 rax swap mov_rr,xx
 }
 
 \ target address literal
 {: xaliteral ( a -( heap )- )
-4 align
+xcode_align align
 tos_store
 rax swap mov_rr,aa
 }
 
 {: x{{ ( -( heap )- a )
-4 align
-$ 10 + 10000 + X16 swap mov_rr,aa
+xcode_align align
+$ xquote_open_size + ximage_base + X16 swap mov_rr,aa
 X16 push
 14000000 d,
 }~ here
 
 {: x}} ( a -( heap )- )
-4 align
-dup here swap - 4 + 2 rshift 3FFFFFF and 14000000 or swap 4 - d!
+xcode_align align
+dup here swap - xrel_size + 2 rshift 3FFFFFF and 14000000 or swap xrel_size - d!
 tos_store
 X0 pop
 }
@@ -1069,7 +1098,7 @@ ret
 \ change compile mode behavior
 {: does
 xlast
-10 +
+xword_comp +
 offset @ +
 w! }
 
@@ -1148,7 +1177,7 @@ B7 w,
 
 f_EntryPoint field
 
-0 w, 1 w, 0 d,
+0 w, ximage_base_hi w, 0 d,
 
 f_ProgramHeaders field
 
@@ -1193,10 +1222,10 @@ $ f_ProgramHeaders @ w!
 0 q,
 
 \ Virtual address 10000
-0 w, 1 w, 0 d,
+0 w, ximage_base_hi w, 0 d,
 
 \ Physical address ???
-0 w, 1 w, 0 d,
+0 w, ximage_base_hi w, 0 d,
 
 f_SizeInFile field
 0 q,
@@ -1226,7 +1255,7 @@ $ f_SectionHeaders @ w!
 6 q,
 
 \ Virtual address 10000
-0 w, 1 w, 0 d,
+0 w, ximage_base_hi w, 0 d,
 
 \ Offset in the file
 0 q,
@@ -1324,7 +1353,7 @@ C d,
 0 q,
 
 f_StringTableVA field
-0 w, 1 w, 0 d,
+0 w, ximage_base_hi w, 0 d,
 
 f_StringTableOffset field
 0 q,
@@ -2876,6 +2905,7 @@ here cell+ cell+ pad length + 1+ ,
 pad s, 0 c,
 here 3 + 3 and 3 xor allot
 here last 8 + !
+\ payload = code + literal(18) + ret(8)
 here 20 +
 literal
 ret, }
