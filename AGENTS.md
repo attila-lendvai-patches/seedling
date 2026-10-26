@@ -184,3 +184,6 @@ Use an area prefix and the imperative mood: `seed: ...`, `sprout: ...`,
 `ci: ...`, `aarch64: ...`, `i386: ...`. Explain the why and any invariant
 that was verified in the body. Rebuild generated binaries in the same
 series as the source change, and say what was compared.
+
+Do not amend commits unless explicitly requested. Add a new commit
+instead.
