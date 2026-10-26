@@ -41,7 +41,7 @@ hex
 \   xcells      ( n -- n*xcell )
 \   xalign      ( a -- a' ) align address up to a cell
 \   xcell+      ( a -- a+xcell )
-\   xcode_align instruction alignment in bytes
+\   xcode_align instruction alignment in bytes (align_code)
 \
 \ Word entry layout (entry = link cell; 'current' points here):
 \   +0              link
@@ -1810,10 +1810,15 @@ native }~
 
 x' drop does
 
+\ Align the code pointer to the next instruction. AArch64
+\ instructions are 4 bytes; keep in sync with xcode_align.
+{: align_code
+here 3 + 3 and 3 xor allot }
+
 \ literal constructors
 
 {: literal
-here 3 + 3 and 3 xor allot
+align_code
 0260 F900 x32,
 2273 9100 x32,
 dup FFFF and
@@ -1837,7 +1842,7 @@ x' >lit does
 x' >lit does
 
 {: {{
-here 3 + 3 and 3 xor allot
+align_code
 here 10 +
 dup FFFF and 5 lshift 10 or
 over FFFF and B rshift D280 or
@@ -1854,7 +1859,7 @@ x32,
 \ before patching the branch and emitting the continuation: AArch64
 \ instructions, and thus branch targets and displacements, are 4-byte units.
 {: }}
-here 3 + 3 and 3 xor allot
+align_code
 dup here swap - 4 + 2 rshift
 swap 4 - >r
 dup FFFF and swap drop
@@ -1890,7 +1895,7 @@ postpone compile
 
 {: quotate {{ execute }~ }}
 
-{: { here 3 + 3 and 3 xor allot here ' compile 'id}~|
+{: { align_code here ' compile 'id}~|
 
 x' quotate does
 
@@ -2058,7 +2063,7 @@ current !
 here cell+ cell+ pad length + 1+ ,
 ' callcomp ,
 pad s, 0 c,
-here 3 + 3 and 3 xor allot
+align_code
 here last 8 + !
 \ payload = code + literal(18) + ret(8)
 here 20 +
