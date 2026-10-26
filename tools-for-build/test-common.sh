@@ -152,6 +152,28 @@ ensure_z80sim() {
     }
 }
 
+far_call_check() {
+    local bin=$1
+    cat >"$BUILD/far-call.seed" <<'EOF'
+output
+hex
+8000000 allot
+{: far dup }
+bye
+EOF
+    printf '  %s < %s (expect failure)\n' \
+        "$(rel "$bin")" "$(rel "$BUILD/far-call.seed")"
+    if "$bin" <"$BUILD/far-call.seed" \
+        >"$BUILD/far-call.out" 2>"$BUILD/far-call.err"; then
+        echo "error: the aarch64 Seed accepted an out-of-range call" >&2
+        return 1
+    fi
+    if ! grep -q "call target out of range" "$BUILD/far-call.err"; then
+        echo "error: the aarch64 Seed did not report the out-of-range call" >&2
+        return 1
+    fi
+}
+
 host_suite() {
     local host_seed=$1
     [ -x "$host_seed" ] || {
@@ -193,6 +215,9 @@ host_suite() {
     cmp --verbose "$BUILD/seed-aarch64" "$BUILD/seed-aarch64.2"
     cmp --verbose "$BUILD/seed-aarch64.2" "$BUILD/seed-aarch64.3"
 
+    # (aarch64) out-of-range calls fail loudly
+    far_call_check "$BUILD/seed-aarch64"
+
     # (i386) Seed cross-compiles from the host Seed
     seed_run "$host_seed" "$ROOT/seed/src/seed-linux-i386.seed" "$BUILD/seed-i386"
     chmod +x "$BUILD/seed-i386"
@@ -221,6 +246,9 @@ host_suite() {
     seed_run "$BUILD/sprout-aarch64.2" "$ROOT/sprout/src/sprout-linux-aarch64.seed" "$BUILD/sprout-aarch64.3"
     cmp --verbose "$BUILD/sprout-aarch64" "$BUILD/sprout-aarch64.2"
     cmp --verbose "$BUILD/sprout-aarch64.2" "$BUILD/sprout-aarch64.3"
+
+    # (aarch64) out-of-range Sprout calls fail loudly
+    far_call_check "$BUILD/sprout-aarch64"
 
     # (aarch64) Sprout compiles the Seed; the result bootstraps itself
     seed_run "$BUILD/sprout-aarch64" "$ROOT/seed/src/seed-linux-aarch64.seed" "$BUILD/seed-aarch64.by-sprout"
@@ -325,6 +353,9 @@ i386_suite() {
     seed_run "$BUILD/seed-aarch64.2" "$ROOT/seed/src/seed-linux-aarch64.seed" "$BUILD/seed-aarch64.3"
     cmp --verbose "$BUILD/seed-aarch64" "$BUILD/seed-aarch64.2"
     cmp --verbose "$BUILD/seed-aarch64.2" "$BUILD/seed-aarch64.3"
+
+    # (aarch64) out-of-range calls fail loudly
+    far_call_check "$BUILD/seed-aarch64"
 
     # (i386) Seed cross-compiles from the amd64 Seed
     seed_run "$BOOTSTRAP" "$ROOT/seed/src/seed-linux-i386.seed" "$BUILD/seed-i386"
