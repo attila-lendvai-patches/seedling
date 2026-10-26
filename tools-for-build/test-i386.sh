@@ -11,5 +11,10 @@ fi
 
 source "$(dirname "${BASH_SOURCE[0]}")/test-common.sh"
 
-BOOTSTRAP="$BOOTSTRAP_AMD64"
+if ! can_execute i386; then
+    skip_note "i386 host suite skipped: $(runner_note i386)"
+    exit 0
+fi
+
+BOOTSTRAP=$(bootstrap_for_host)
 i386_suite

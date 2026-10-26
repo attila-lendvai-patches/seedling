@@ -11,5 +11,10 @@ fi
 
 source "$(dirname "${BASH_SOURCE[0]}")/test-common.sh"
 
+if ! can_execute amd64; then
+    skip_note "amd64 host suite skipped: $(runner_note amd64)"
+    exit 0
+fi
+
 BOOTSTRAP="$BOOTSTRAP_AMD64"
 host_suite "$BOOTSTRAP"

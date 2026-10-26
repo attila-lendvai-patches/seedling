@@ -11,5 +11,10 @@ fi
 
 source "$(dirname "${BASH_SOURCE[0]}")/test-common.sh"
 
+if ! can_execute aarch64; then
+    skip_note "aarch64 host suite skipped: $(runner_note aarch64)"
+    exit 0
+fi
+
 BOOTSTRAP="$BOOTSTRAP_AARCH64"
 host_suite "$BOOTSTRAP"

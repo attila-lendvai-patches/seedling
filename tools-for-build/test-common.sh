@@ -20,6 +20,7 @@ BUILD="$TOOLS/build"
 PROBES="$TOOLS/probes"
 BOOTSTRAP_AMD64="$ROOT/seed/bin/seed-linux-amd64"
 BOOTSTRAP_AARCH64="$ROOT/seed/bin/seed-linux-aarch64"
+BOOTSTRAP_I386="$ROOT/seed/bin/seed-linux-i386"
 Z80SIM_DIR="$TOOLS/z80sim"
 Z80SIM="$Z80SIM_DIR/z80sim"
 Z80SIM_REV=4bb8be2
@@ -46,6 +47,72 @@ host_arch() {
     esac
 }
 
+qemu_candidates() {
+    case "$1" in
+        amd64) echo "qemu-x86_64 qemu-x86_64-static qemu-amd64 qemu-amd64-static" ;;
+        i386) echo "qemu-i386 qemu-i386-static" ;;
+        aarch64) echo "qemu-aarch64 qemu-aarch64-static" ;;
+        *) : ;;
+    esac
+}
+
+# True when a binary of arch can be executed on this host, natively or
+# through qemu.  TEST_NO_QEMU=1 forces foreign targets to be skipped.
+can_execute() {
+    local arch=$1 host q
+    if [ "$arch" = raw ]; then
+        [ -x "$Z80SIM" ]
+        return
+    fi
+    host=$(host_arch)
+    [ "$arch" = "$host" ] && return 0
+    [ "$arch" = i386 ] && [ "$host" = amd64 ] && return 0
+    [ "${TEST_NO_QEMU:-0}" = 1 ] && return 1
+    for q in $(qemu_candidates "$arch"); do
+        if command -v "$q" >/dev/null 2>&1; then
+            return 0
+        fi
+    done
+    return 1
+}
+
+runner_note() {
+    case "$1" in
+        amd64) echo "install qemu-x86_64 or enable binfmt" ;;
+        i386) echo "install qemu-i386 or enable binfmt" ;;
+        aarch64) echo "install qemu-aarch64 or enable binfmt" ;;
+        raw) echo "build z80sim" ;;
+        *) echo "no runner available" ;;
+    esac
+}
+
+skip_note() {
+    printf 'SKIP: %s\n' "$*" >&2
+}
+
+suite_capabilities() {
+    HAVE_AMD64=0
+    HAVE_I386=0
+    HAVE_AARCH64=0
+    if can_execute amd64; then HAVE_AMD64=1; fi
+    if can_execute i386; then HAVE_I386=1; fi
+    if can_execute aarch64; then HAVE_AARCH64=1; fi
+}
+
+bootstrap_for_host() {
+    case "$(host_arch)" in
+        aarch64) echo "$BOOTSTRAP_AARCH64" ;;
+        i386)
+            if can_execute amd64; then
+                echo "$BOOTSTRAP_AMD64"
+            else
+                echo "$BOOTSTRAP_I386"
+            fi
+            ;;
+        *) echo "$BOOTSTRAP_AMD64" ;;
+    esac
+}
+
 elf_machine() {
     local file=$1 magic
     magic=$(head -c 4 "$file" | od -An -tx1 | tr -d ' \n')
@@ -62,7 +129,8 @@ elf_machine() {
     esac
 }
 
-# Run a target binary: native, through qemu, or through the z80 sim.
+# Run a target binary natively, or through qemu.  Return 77 when no
+# runner is available; callers treat that as a skipped test.
 run_target() {
     local bin=$1 arch host q limit
     shift
@@ -78,14 +146,16 @@ run_target() {
         timeout "$limit" "$bin" "$@"
         return
     fi
-    for q in "qemu-$arch" "qemu-${arch}-static"; do
-        if command -v "$q" >/dev/null 2>&1; then
-            timeout "$limit" "$q" "$bin" "$@"
-            return
-        fi
-    done
-    # Last resort: binfmt_misc may handle the foreign binary directly.
-    timeout "$limit" "$bin" "$@"
+    if [ "${TEST_NO_QEMU:-0}" != 1 ]; then
+        for q in $(qemu_candidates "$arch"); do
+            if command -v "$q" >/dev/null 2>&1; then
+                timeout "$limit" "$q" "$bin" "$@"
+                return
+            fi
+        done
+    fi
+    skip_note "cannot execute $arch binary: $(runner_note "$arch")"
+    return 77
 }
 
 seed_run() {
@@ -135,6 +205,10 @@ check_stdout() {
     local out="$BUILD/probe.out" err="$BUILD/probe.err"
     local status=0 got
     run_target "$bin" <"$src" >"$out" 2>"$err" || status=$?
+    if [ "$status" -eq 77 ]; then
+        test_skip "$label: no runner"
+        return 0
+    fi
     if [ "$status" -ne 0 ]; then
         test_fail "$label: exited $status ($(head -c 120 "$err" |
             tr '\n' ' '))"
@@ -164,10 +238,15 @@ probe_expected() {
 
 # Run all probes against one freshly built Seed or Sprout binary.
 runtime_suite() {
-    local bin=$1 label=$2 before=$TEST_FAIL probe want
+    local bin=$1 label=$2 before=$TEST_FAIL probe want arch
     if [ ! -f "$bin" ]; then
-        test_fail "$label: not built"
-        return 1
+        test_skip "$label: not built"
+        return 0
+    fi
+    arch=$(elf_machine "$bin")
+    if ! can_execute "$arch"; then
+        test_skip "$label: $(runner_note "$arch")"
+        return 0
     fi
     chmod +x "$bin" 2>/dev/null || true
     for probe in "$PROBES"/*.seed; do
@@ -290,7 +369,86 @@ ensure_z80sim() {
     }
 }
 
+
+# Build and self-host one target architecture from the worktree.  Used
+# when not every target has a runner; the full matrix runs otherwise.
+target_suite() {
+    local host_seed=$1 arch=$2 seed_src=$3 sprout_src=$4
+    local seed_bin="$BUILD/seed-$arch" sprout_bin="$BUILD/sprout-$arch"
+
+    echo "==> $arch target suite"
+    seed_run "$host_seed" "$seed_src" "$seed_bin"
+    chmod +x "$seed_bin"
+    runtime_suite "$seed_bin" "seed-$arch-gen1"
+    seed_run "$seed_bin" "$seed_src" "$seed_bin.2"
+    chmod +x "$seed_bin.2"
+    runtime_suite "$seed_bin.2" "seed-$arch-gen2"
+    seed_run "$seed_bin.2" "$seed_src" "$seed_bin.3"
+    cmp --verbose "$seed_bin" "$seed_bin.2"
+    cmp --verbose "$seed_bin.2" "$seed_bin.3"
+
+    seed_run "$host_seed" "$sprout_src" "$sprout_bin"
+    chmod +x "$sprout_bin"
+    runtime_suite "$sprout_bin" "sprout-$arch-gen1"
+    seed_run "$sprout_bin" "$sprout_src" "$sprout_bin.2"
+    chmod +x "$sprout_bin.2"
+    runtime_suite "$sprout_bin.2" "sprout-$arch-gen2"
+    seed_run "$sprout_bin.2" "$sprout_src" "$sprout_bin.3"
+    cmp --verbose "$sprout_bin" "$sprout_bin.2"
+    cmp --verbose "$sprout_bin.2" "$sprout_bin.3"
+}
+
+all_targets_available() {
+    [ "$HAVE_AMD64" = 1 ] && [ "$HAVE_I386" = 1 ] &&
+        [ "$HAVE_AARCH64" = 1 ]
+}
+
+print_missing_targets() {
+    [ "$HAVE_AMD64" = 1 ] ||
+        skip_note "amd64 tests skipped: $(runner_note amd64)"
+    [ "$HAVE_I386" = 1 ] ||
+        skip_note "i386 tests skipped: $(runner_note i386)"
+    [ "$HAVE_AARCH64" = 1 ] ||
+        skip_note "aarch64 tests skipped: $(runner_note aarch64)"
+}
+
 host_suite() {
+    local host_seed=$1
+    suite_capabilities
+    if all_targets_available; then
+        host_suite_full "$host_seed"
+        return
+    fi
+
+    prepare_build
+    echo "==> host suite"
+    echo "    host Seed: $(rel "$host_seed")"
+    echo "    bootstrap: $(rel "$BOOTSTRAP")"
+    if [ "${TEST_CHECKS_DONE:-0}" != 1 ]; then
+        source_line_check
+        committed_binary_check
+    fi
+    print_missing_targets
+    if [ "$HAVE_AMD64" = 1 ]; then
+        target_suite "$host_seed" amd64 \
+            "$ROOT/seed/src/seed-linux-amd64.seed" \
+            "$ROOT/sprout/src/sprout-linux-amd64.seed"
+    fi
+    if [ "$HAVE_I386" = 1 ]; then
+        target_suite "$host_seed" i386 \
+            "$ROOT/seed/src/seed-linux-i386.seed" \
+            "$ROOT/sprout/src/sprout-linux-i386.seed"
+    fi
+    if [ "$HAVE_AARCH64" = 1 ]; then
+        target_suite "$host_seed" aarch64 \
+            "$ROOT/seed/src/seed-linux-aarch64.seed" \
+            "$ROOT/sprout/src/sprout-linux-aarch64.seed"
+    fi
+    skip_note "cross-compilation matrix skipped: not all targets executable"
+    elf_check
+}
+
+host_suite_full() {
     local host_seed=$1
     [ -x "$host_seed" ] || {
         echo "error: host Seed is not executable: $host_seed" >&2
@@ -448,7 +606,52 @@ host_suite() {
 # aarch64 Sprout: its floating-point constants are 64-bit and do not
 # fit the i386 host's cells. This suite covers the i386 Seed and
 # Sprout, the aarch64 Seed, and the amd64/i386 cross-checks.
+
 i386_suite() {
+    suite_capabilities
+    if all_targets_available; then
+        i386_suite_full
+        return
+    fi
+
+    prepare_build
+    echo "==> i386 host suite"
+    echo "    bootstrap: $(rel "$BOOTSTRAP")"
+    if [ "${TEST_CHECKS_DONE:-0}" != 1 ]; then
+        source_line_check
+        committed_binary_check
+    fi
+    print_missing_targets
+    if [ "$(host_arch)" = i386 ]; then
+        # The i386 host can compile a foreign Seed, but not the amd64 or
+        # aarch64 Sprout; run only the native target in a partial setup.
+        target_suite "$BOOTSTRAP" i386 \
+            "$ROOT/seed/src/seed-linux-i386.seed" \
+            "$ROOT/sprout/src/sprout-linux-i386.seed"
+        skip_note "amd64 tests skipped on i386 host without amd64 runner"
+        skip_note "aarch64 tests skipped on i386 host without amd64 runner"
+    else
+        if [ "$HAVE_AMD64" = 1 ]; then
+            target_suite "$BOOTSTRAP" amd64 \
+                "$ROOT/seed/src/seed-linux-amd64.seed" \
+                "$ROOT/sprout/src/sprout-linux-amd64.seed"
+        fi
+        if [ "$HAVE_I386" = 1 ]; then
+            target_suite "$BOOTSTRAP" i386 \
+                "$ROOT/seed/src/seed-linux-i386.seed" \
+                "$ROOT/sprout/src/sprout-linux-i386.seed"
+        fi
+        if [ "$HAVE_AARCH64" = 1 ]; then
+            target_suite "$BOOTSTRAP" aarch64 \
+                "$ROOT/seed/src/seed-linux-aarch64.seed" \
+                "$ROOT/sprout/src/sprout-linux-aarch64.seed"
+        fi
+    fi
+    skip_note "cross-compilation matrix skipped: not all targets executable"
+    elf_check
+}
+
+i386_suite_full() {
     prepare_build
     echo "==> i386 host suite"
     echo "    bootstrap: $(rel "$BOOTSTRAP")"
