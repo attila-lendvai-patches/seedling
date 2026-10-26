@@ -125,6 +125,23 @@ When porting, update all of:
 * `.github/workflows/ci.yaml`;
 * cross-compile checks in both directions with existing ports.
 
+## Duplicated code across variants
+
+The sources duplicate a lot of logic: the Seed and Sprout sources share
+much of their front end, and every architecture repeats the same emitter
+structure. Treat every edit as a candidate change to all copies.
+
+* **Across architectures, always propagate.** A fix or improvement to one
+  Seed or Sprout port belongs in every port unless the ISA genuinely
+  forbids it. Differences should be target geometry, not accidental drift.
+* **Between Seed and Sprout, judge on simplicity.** They may diverge when
+  keeping Seed as simple as possible pays for the duplication. Do not copy
+  a Sprout-only refinement into Seed just to shrink the diff. When unsure
+  whether a Seed change should follow Sprout, ask the user.
+
+Before concluding an edit is local, grep for the changed word or idiom in
+the other variants, and re-check cross-compilation after applying it.
+
 ## ELF output
 
 Sprouts keep their section headers. The current valid layout is:
