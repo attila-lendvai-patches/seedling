@@ -139,8 +139,11 @@ ELF code.
 ## Source style
 
 * Hard line limit: every Seed and Sprout source line is at most 64
-  bytes, including comments and any multi-byte UTF-8 characters.
-  Seed sources are 7-bit ASCII, one file per port. Sprout sources are
+  bytes of UTF-8, including comments. New or edited code should also
+  keep the width within 64 columns after expanding tabs to 8-column
+  stops; existing over-wide lines are tolerated while they are not
+  otherwise being changed, and the test suite warns about them. Seed
+  sources are 7-bit ASCII, one file per port. Sprout sources are
   UTF-8, but non-ASCII is only allowed in comments and literals.
 * Words are at most 30 printable ASCII characters, case-sensitive.
 * `\` comments to end of line. `( ... )` comments are reserved for type

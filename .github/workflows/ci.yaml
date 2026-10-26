@@ -25,6 +25,36 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Check source line lengths
+        run: |
+          python3 - <<'PY'
+          import glob
+          import sys
+
+          bad = False
+          warned = False
+          for path in sorted(glob.glob('seed/src/*.seed') +
+                             glob.glob('sprout/src/*.seed')):
+              with open(path, encoding='utf-8') as source:
+                  for number, line in enumerate(source, 1):
+                      line = line.rstrip('\r\n')
+                      size = len(line.encode('utf-8'))
+                      if size > 64:
+                          print(f'{path}:{number}: {size} bytes (max 64)',
+                                file=sys.stderr)
+                          bad = True
+                      width = len(line.expandtabs(8))
+                      if width > 64:
+                          print(f'{path}:{number}: {width} columns '
+                                '(max 64, warning)', file=sys.stderr)
+                          warned = True
+          if warned:
+              print('warning: source lines over 64 columns; '
+                    'tolerated until edited', file=sys.stderr)
+          if bad:
+              sys.exit(1)
+          PY
+
       - name: Install QEMU user-mode emulators and elfutils
         run: sudo apt-get update && sudo apt-get install -y qemu-user elfutils
 
