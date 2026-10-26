@@ -995,6 +995,8 @@ drop
 0 variable f_TotalFileSize
 0 variable f_StringTableVA
 0 variable f_StringTableOffset
+0 variable f_DataOffset
+0 variable f_BssOffset
 
 {: 0c, 0 c, }
 
@@ -1172,10 +1174,10 @@ f_SectionHeaders field
 40 w,
 
 \ Number of section header entries
-4 w,
+5 w,
 
 \ Index of string table section
-3 w,
+4 w,
 
 \ Program Headers
 
@@ -1252,13 +1254,14 @@ f_TotalFileSize field
 \ Type: nobits
 8 d,
 
-\ Flags: writable, allocated, executable
-7 q,
+\ Flags: writable, allocated
+3 q,
 
 \ Virtual address
 A000 w, 1 w, 0 d,
 
 \ Offset in the file
+f_BssOffset field
 0 q,
 
 \ Section size
@@ -1278,6 +1281,39 @@ A000 w, 1 w, 0 d,
 
 
 
+\ .data segment (empty; marks the segment's writable part)
+
+\ Name
+16 d,
+
+\ Type: PROGBITS
+1 d,
+
+\ Flags: writable, allocated
+3 q,
+
+\ Virtual address
+A000 w, 1 w, 0 d,
+
+\ Offset in the file
+f_DataOffset field
+0 q,
+
+\ Section size
+0 q,
+
+\ Linked section index
+0 d,
+
+\ Info ???
+0 d,
+
+\ Alignment
+1 q,
+
+\ Section entry size
+0 q,
+
 \ String Table Section
 C d,
 
@@ -1294,7 +1330,7 @@ f_StringTableOffset field
 0 q,
 
 \ Length
-16 q,
+1C q,
 
 \ Other stuff
 0 d, 0 d, 1 q, 0 q,
@@ -3228,8 +3264,10 @@ X0 10 add_rr,s
 X0 X0 mov_rr,[rr]
 x' _sprout jmp
 
-$ dup dup
+$ dup dup dup dup
 f_SizeInFile @ w!
+f_DataOffset @ w!
+f_BssOffset @ w!
 f_StringTableVA @ w!
 f_StringTableOffset @ w!
 
@@ -3238,6 +3276,7 @@ f_StringTableOffset @ w!
 " .text" drop
 " .bss" drop
 " .shstrtab" drop
+" .data" drop
 
 $ f_TotalFileSize @ w!
 
