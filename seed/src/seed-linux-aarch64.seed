@@ -24,11 +24,10 @@ output \ this must be on the first line
 hex
 
 \ [port] IMAGE BASE
-\ The target image is loaded at ximage_base and must stay below
-\ 18000 (the system variables). Absolute addresses are emitted as
-\ ximage_base + low16(image offset).
-10000 constant ximage_base
-ximage_base 10 rshift constant ximage_base_hi
+\ Image base: ximage_base_hi:low16(offset). The image must stay
+\ below 18000 (the system variables), and no host value is wider
+\ than 16 bits.
+1 constant ximage_base_hi
 
 \ [port] TARGET GEOMETRY (AArch64)
 \ Values describe the target, not the compiling Seed. Offsets are
@@ -105,6 +104,13 @@ xcell 2 * constant xname_from_token
 \ 16-bit little-endian store
 {: w!		dup >r 1+ >r lsb swap r> c! r> c! }
 
+\ [port] emit/store a 32-bit value as two 16-bit words; a 16-bit
+\ host cell cannot hold it whole; pass the halves apart.
+\ ( low16 high16 -- )
+{: x32,		swap w, w, }
+\ ( low16 high16 addr -- )
+{: x32!		>r swap r> dup 2 + >r w! r> w! }
+
 \ dump the tail of the heap for outputting the result
 {: dump		here over - write drop }
 
@@ -158,26 +164,20 @@ create labels
 {: label@	label_cell @ }
 {: lb		label@ }
 
-\ Converts the address to a relative backward offset, divided by
-\ 4 as expected by the ISA. Then shifts the offset into position
-\ for the instruction, i.e. lshifts with low_bits bits, and
-\ clears out high_bits number of bits from the left. Fails if
-\ out of range.
-{: label_offset ( addr high_bits low_bits -- off off)
-  swap >r >r                    \ r: high_bits low_bits
-  $ -                           \ offset
-  2 rshift                      \ divided by 4
-  r> lshift                     \ left by low_bits
-  dup                           \ ds: offset, offset
-  10 rshift                     \ ds: offset, offset_high16
-  10 r> -                       \ 16 - high_bits
-  bit_size_to_mask dup >r       \ mask; saved, too
-  invert FFFF and               \ limit mask to 16 bits
-                                \ ds: offset, o_high16, mask
-  dup third and = drop \ fail if the lost part is not all 1's
-  r> and                        \ drop opcode bits from upper16
-  swap
-  \ ds: offset_high16, offset (full size, but fine for w, )
+\ Backward label offset, divided by 4 as the ISA expects. Split
+\ into the low 16 bits and the sign bits above them; high_bits
+\ and low_bits describe the destination field.
+{: label_offset ( addr high_bits low_bits -- high_imm low16 )
+  >r >r                 \ addr ; r: low_bits high_bits
+  $ swap -              \ here-addr (backward distance)
+  2 rshift              \ instruction offset, divided by 4
+  0 swap -              \ signed instruction offset
+  r> r>                 \ imm high_bits low_bits
+  swap >r               \ imm low_bits ; r: high_bits
+  over swap lshift      \ imm low16
+  swap 8000 and F rshift \ low16 sign
+  r> 10 swap - bit_size_to_mask
+  * swap
 }
 
 \ Emit a relative jump offset (backward).
@@ -197,12 +197,15 @@ create labels
   here swap label_cell !
 }
 
-\ This properly handles >16 bit forward offsets on hosts with at
-\ least 32 bit cells, but it also doesn't fail on 16 bit hosts.
-{: label_offset_f ( place -- offset_high16 offset )
-  dup here swap - 2 rshift    \ ds: place, place, offset/4
-  swap c@ 0F and lshift       \ shift the offset into place
-  dup 10 rshift               \ ds: offset, offset_high16
+\ Forward label offset, split into high and low halves.
+\ The patch site holds the field's low-bit position.
+{: label_offset_f ( place -- high_imm low16 )
+  dup here swap - 2 rshift    \ place, offset/4
+  swap c@ 0F and              \ offset, low_bits
+  dup >r                      \ offset, low_bits ; r: low_bits
+  over swap lshift            \ offset, low16
+  swap                        \ low16, offset
+  r> 10 swap - rshift         \ low16, high_imm
   swap
 }
 
@@ -265,131 +268,164 @@ F constant X15
 
 \ Immediate construction
 
+\ The imm16 field crosses the 16-bit boundary: its low 11 bits
+\ are in the low half, its high 5 bits in the high half.
 {: MOVZ_r,u16, ( reg imm -- )
-  swap over FFFF and 5 lshift over or D2800000 or d,
-  drop drop
+  swap over FFFF and 5 lshift over or
+  swap >r swap FFFF and B rshift D280 or
+  x32, r> drop
 }
 
 {: MOVK_r,u16, ( reg imm -- )
-  swap over FFFF and 5 lshift over or F2A00000 or d,
-  drop drop
+  swap over FFFF and 5 lshift over or
+  swap >r swap FFFF and B rshift F2A0 or
+  x32, r> drop
 }
 
 {: mov_rr,x ( reg imm -- )
   swap
-  over FFFF and 5 lshift over or D2800000 or d,
-  over 10 rshift FFFF and 5 lshift over or F2A00000 or d,
-  over 20 rshift FFFF and 5 lshift over or F2C00000 or d,
-  over 30 rshift FFFF and 5 lshift over or F2E00000 or d,
-  drop drop
+  over FFFF and 5 lshift over or
+  swap >r swap FFFF and B rshift D280 or
+  x32, r>
+  0 5 lshift over or F2A0 x32,
+  0 5 lshift over or F2C0 x32,
+  0 5 lshift over or F2E0 x32,
+  drop
 }
 
 {: mov_rr,aa ( reg addr -- )
   swap
-  over FFFF and 5 lshift over or D2800000 or d,
-  1 5 lshift over or F2A00000 or d,
-  drop drop
+  over FFFF and 5 lshift over or
+  swap >r swap FFFF and B rshift D280 or
+  x32, r>
+  ximage_base_hi 5 lshift over or F2A0 x32,
+  drop
 }
 
 \ Register to register operations
 
 {: MOV_r,r, ( dst src -- )
-  10 lshift swap or AA0003E0 or d,
+  over 3E0 or swap AA00 or x32, drop
 }
 
 {: ADD_r,r, ( dst src -- )
-  10 lshift swap dup 5 lshift or or 8B000000 or d,
+  over dup 5 lshift or swap 8B00 or x32, drop
 }
 
 {: ADDS_r,r, ( dst src -- )
-  10 lshift swap dup 5 lshift or or AB000000 or d,
+  over dup 5 lshift or swap AB00 or x32, drop
 }
 
 {: SUB_r,r, ( dst src -- )
-  10 lshift swap dup 5 lshift or or CB000000 or d,
+  over dup 5 lshift or swap CB00 or x32, drop
 }
 
 {: SUBS_r,r, ( dst src -- )
-  10 lshift swap dup 5 lshift or or EB000000 or d,
+  over dup 5 lshift or swap EB00 or x32, drop
 }
 
 {: AND_r,r, ( dst src -- )
-  10 lshift swap dup 5 lshift or or 8A000000 or d,
+  over dup 5 lshift or swap 8A00 or x32, drop
 }
 
 {: ORR_r,r, ( dst src -- )
-  10 lshift swap dup 5 lshift or or AA000000 or d,
+  over dup 5 lshift or swap AA00 or x32, drop
 }
 
 {: ORRS_r,r, ( dst src -- )
-  10 lshift swap dup 5 lshift or or EA000000 or d,
+  over dup 5 lshift or swap EA00 or x32, drop
 }
 
 {: EOR_r,r, ( dst src -- )
-  10 lshift swap dup 5 lshift or or CA000000 or d,
+  over dup 5 lshift or swap CA00 or x32, drop
 }
 
 \ Register to immediate operations
 
 {: ADD_r,s, ( reg imm -- )
-  A lshift swap dup dup 5 lshift or or or 91000000 or d,
+  over dup 5 lshift or >r
+  dup 6 rshift >r
+  3F and A lshift
+  r> 9100 or
+  swap r> or
+  swap x32, drop
 }
 
 {: ADDS_r,s, ( reg imm -- )
-  A lshift swap dup dup 5 lshift or or or B1000000 or d,
+  over dup 5 lshift or >r
+  dup 6 rshift >r
+  3F and A lshift
+  r> B100 or
+  swap r> or
+  swap x32, drop
 }
 
 {: SUB_r,s, ( reg imm -- )
-  A lshift swap dup dup 5 lshift or or or D1000000 or d,
+  over dup 5 lshift or >r
+  dup 6 rshift >r
+  3F and A lshift
+  r> D100 or
+  swap r> or
+  swap x32, drop
 }
 
 {: SUBS_r,s, ( reg imm -- )
-  A lshift swap dup dup 5 lshift or or or F1000000 or d,
+  over dup 5 lshift or >r
+  dup 6 rshift >r
+  3F and A lshift
+  r> F100 or
+  swap r> or
+  swap x32, drop
 }
 
 {: CMP_r,r, ( left right -- )
-  10 lshift swap 5 lshift or EB00001F or d,
+  over 5 lshift 1F or swap EB00 or x32, drop
 }
 
 {: CMP_r,s, ( reg imm -- )
-  A lshift swap 5 lshift or F100001F or d,
+  over 5 lshift 1F or >r
+  dup 6 rshift >r
+  3F and A lshift
+  r> F100 or
+  swap r> or
+  swap x32, drop
 }
 
 \ Memory operations
 
 {: LDR_r,[r], ( dst base -- )
-  5 lshift swap or F9400000 or d,
+  5 lshift swap or F940 x32,
 }
 
 {: STR_r,[r], ( base src -- )
-  swap 5 lshift swap or F9000000 or d,
+  swap 5 lshift swap or F900 x32,
 }
 
 {: LDR_er,[r], ( dst base -- )
-  5 lshift swap or B9400000 or d,
+  5 lshift swap or B940 x32,
 }
 
 {: STR_er,[r], ( base src -- )
-  swap 5 lshift swap or B9000000 or d,
+  swap 5 lshift swap or B900 x32,
 }
 
 {: LDR_rl,[r], ( dst base -- )
-  5 lshift swap or 39400000 or d,
+  5 lshift swap or 3940 x32,
 }
 
 {: STR_rl,[r], ( base src -- )
-  swap 5 lshift swap or 39000000 or d,
+  swap 5 lshift swap or 3900 x32,
 }
 
 {: STRB_16,[r], ( base -- )
-  5 lshift 10 or 39000000 or d,
+  5 lshift 10 or 3900 x32,
 }
 {: mov_from_sp ( dst -- )
-  910003E0 or d,
+  3E0 or 9100 x32,
 }
 
 {: mov_to_sp ( src -- )
-  5 lshift 91000000 or 1F or d,
+  5 lshift 1F or 9100 x32,
 }
 
 {: movSP,[aa] ( addr -- )
@@ -441,7 +477,7 @@ F constant X15
 {: sub_rr,s ( reg imm -- ) SUB_r,s, }
 {: sub_rr,rr ( dst src -- ) SUB_r,r, }
 {: sbb_rr,rr ( dst src -- )
-  10 lshift swap dup 5 lshift or or DA000000 or d,
+  over dup 5 lshift or swap DA00 or x32, drop
 }
 {: adds_rr,rr ( dst src -- ) ADDS_r,r, }
 {: adds_rr,s ( reg imm -- ) ADDS_r,s, }
@@ -459,15 +495,15 @@ F constant X15
 {: or_rr,rr ( dst src -- ) ORR_r,r, }
 {: xor_rr,rr ( dst src -- ) EOR_r,r, }
 
-{: set_carry_add 9A9F37F2 d, }
-{: set_carry_sub 9A9F27F2 d, }
-{: set_carry_ne 9A9F07F2 d, }
+{: set_carry_add 37F2 9A9F x32, }
+{: set_carry_sub 27F2 9A9F x32, }
+{: set_carry_ne 07F2 9A9F x32, }
 
-{: SVC D4000001 d, }
+{: SVC 1 D400 x32, }
 {: int_x SVC }
 
-{: push ( reg -- ) 1F8FE0 or F81F8C00 or d, }
-{: pop ( reg -- ) F84087E0 or d, }
+{: push ( reg -- ) 8FE0 or F81F x32, }
+{: pop ( reg -- ) 87E0 or F840 x32, }
 
 \ Branch instructions
 
@@ -516,26 +552,26 @@ F constant X15
 \ x86-style branch names
 
 {: call ( addr -- )
-  $ xcall_size + ximage_base + X16 swap mov_rr,aa
+  $ xcall_size + X16 swap mov_rr,aa
   X16 push
   B.
 }
 {: call_f ( label -- )
-  $ xcall_size + ximage_base + X16 swap mov_rr,aa
+  $ xcall_size + X16 swap mov_rr,aa
   X16 push
   B._f
 }
 {: call_rr ( reg -- )
-  $ xcall_size + ximage_base + X16 swap mov_rr,aa
+  $ xcall_size + X16 swap mov_rr,aa
   X16 push
-  5 lshift D61F0000 or d,
+  5 lshift D61F x32,
 }
 {: jmp ( addr -- ) B. }
 {: jmp_s ( addr -- ) B. }
 {: jmp_f ( label -- ) B._f }
-{: jmp_rr ( reg -- ) 5 lshift D61F0000 or d, }
+{: jmp_rr ( reg -- ) 5 lshift D61F x32, }
 {: jmp_[aa] ( addr -- )
-  58000070 d, F9400210 d, D61F0200 d, a,
+  0070 5800 x32, 0210 F940 x32, 0200 D61F x32, a,
 }
 
 {: jc ( addr -- ) X18 0 cmp_rr,s B.NE }
@@ -582,34 +618,43 @@ F constant X15
 {: std }
 
 \ Shift instructions
+\ immr sits above bit 15, so build the high half apart.
 
 {: shl_rr,s ( reg imm -- )
-  dup 3F swap - A lshift >r
-  0 swap - 3F and 10 lshift r> or
-  over dup 5 lshift or or D3400000 or d, drop
+  over dup 5 lshift or
+  >r
+  dup 3F swap - A lshift
+  r> or
+  swap
+  0 swap - 3F and D340 or
+  x32, drop
 }
 
 {: shr_rr,s ( reg imm -- )
-  dup 10 lshift >r
-  drop
-  3F A lshift r> or
-  over dup 5 lshift or or D3400000 or d, drop
+  over dup 5 lshift or
+  3F A lshift or
+  swap
+  D340 or
+  x32, drop
 }
 
 {: shl_rr,cl ( reg -- )
-  dup 5 lshift or 30000 or 9AC02000 or d,
+  dup 5 lshift or 2000 or 9AC3 x32,
 }
 
 {: shr_rr,cl ( reg -- )
-  dup 5 lshift or 30000 or 9AC02400 or d,
+  dup 5 lshift or 2400 or 9AC3 x32,
 }
 
 {: sar_rr,cl ( reg -- )
-  dup 5 lshift or 30000 or 9AC02800 or d,
+  dup 5 lshift or 2800 or 9AC3 x32,
 }
 
 {: rcr_rr,1 ( reg -- )
-  dup dup 5 lshift or over 10 lshift 6 lshift or 93C00400 or d, drop
+  dup
+  dup 5 lshift or 400 or
+  swap 6 lshift 93C0 or
+  x32,
 }
 
 {: rep_movsq }
@@ -625,24 +670,27 @@ F constant X15
 
 {: mul_rr ( reg -- )
   X16 X0 MOV_r,r,
-  dup 10 lshift 200 or 9B007C00 or d,
-  10 lshift 200 or 2 or 9BC07C00 or d,
+  dup 9B00 or 7E00 swap x32,
+  dup 9BC0 or 7E02 swap x32,
+  drop
 }
 
 {: div_rr ( reg -- )
-  dup 10 lshift 10 or 9AC00800 or d,
-  10 lshift 200 or 2 or 9B008000 or d,
+  dup 9AC0 or 810 swap x32,
+  dup 9B00 or 8202 swap x32,
+  drop
   X0 X16 MOV_r,r,
 }
 
 {: idiv_rr ( reg -- )
-  dup 10 lshift 10 or 9AC00C00 or d,
-  10 lshift 200 or 2 or 9B008000 or d,
+  dup 9AC0 or 0C10 swap x32,
+  dup 9B00 or 8202 swap x32,
+  drop
   X0 X16 MOV_r,r,
 }
 
-{: not_rr AA2003E0 d, }
-{: neg_rr CB0003E0 d, }
+{: not_rr 3E0 AA20 x32, }
+{: neg_rr 3E0 CB00 x32, }
 
 \ syscall
 
@@ -767,14 +815,17 @@ X0 swap mov_rr,aa
 
 {: x{{ ( -( heap )- a )
 xcode_align align
-$ xquote_open_size + ximage_base + X16 swap mov_rr,aa
+$ xquote_open_size + X16 swap mov_rr,aa
 X16 push
-14000000 d,
+0 w, 1400 w,
 }~ here
 
 {: x}} ( a -( heap )- )
 xcode_align align
-dup here swap - xrel_size + 2 rshift 3FFFFFF and 14000000 or swap xrel_size - d!
+dup here swap - xrel_size + 2 rshift
+swap xrel_size - >r
+dup FFFF and swap drop
+1400 r> x32!
 tos_store
 X0 pop
 }
@@ -886,7 +937,7 @@ drop
 {: field here swap ! }
 
 \ system variables
-18000  dup    constant SEED
+8000   dup    constant SEED
 xcell+ dup    constant DP
 xcell+ dup    constant TIB
 xcell+ dup    constant FAIL
@@ -912,7 +963,7 @@ xcreate
 \ postpone colon definition
 {: postpone
 native
-14000000 d,
+0 w, 1400 w,
 }
 
 \ effect definition
@@ -971,10 +1022,11 @@ $ ' xcompile 'id}~|
 \ postponed colon definition
 {: {::
 word xfind w@ offset @ +
-dup 4 +
-here 4 + swap -
-2 rshift 3FFFFFF and 14000000 or
-swap d!
+dup here swap -
+2 rshift
+swap >r
+dup FFFF and swap drop
+1400 r> x32!
 $ ' xcompile 'id|
 }~ drop
 
@@ -1078,7 +1130,7 @@ f_SizeInFile field
 0 q,
 
 \ p_memsz: size in memory
-0 w, 1 w, 0 d,
+0 w, ximage_base_hi w, 0 d,
 
 \ p_align: alignment
 1000 q,
@@ -1122,14 +1174,16 @@ $ callcomp !
 X3 4 mov_rr,x
 1 lb call
 X3 DP mov_rr,[aa]
-X16 10000070 mov_rr,x
+X16 70 mov_rr,x
+X16 1000 MOVK_r,u16,
 X3 X16 mov_[rr],er
 X3 4 add_rr,s
 DP X3 mov_[aa],rr
 X3 4 mov_rr,x
 1 lb call
 X3 DP mov_rr,[aa]
-X16 F81F8FF0 mov_rr,x
+X16 8FF0 mov_rr,x
+X16 F81F MOVK_r,u16,
 X3 X16 mov_[rr],er
 X3 4 add_rr,s
 DP X3 mov_[aa],rr
@@ -1139,9 +1193,11 @@ X3 DP mov_rr,[aa]
 X16 X0 mov_rr,rr
 X16 X3 sub_rr,rr
 X16 2 shr_rr,s
-X17 3FFFFFF mov_rr,x
+X17 FFFF mov_rr,x
+X17 3FF MOVK_r,u16,
 X16 X17 and_rr,rr
-X17 14000000 mov_rr,x
+X17 0 mov_rr,x
+X17 1400 MOVK_r,u16,
 X16 X17 or_rr,rr
 X3 X16 mov_[rr],er
 X3 4 add_rr,s
@@ -1158,9 +1214,11 @@ X3 DP mov_rr,[aa]
 X16 X0 mov_rr,rr
 X16 X3 sub_rr,rr
 X16 2 shr_rr,s
-X17 3FFFFFF mov_rr,x
+X17 FFFF mov_rr,x
+X17 3FF MOVK_r,u16,
 X16 X17 and_rr,rr
-X17 14000000 mov_rr,x
+X17 0 mov_rr,x
+X17 1400 MOVK_r,u16,
 X16 X17 or_rr,rr
 X3 X16 mov_[rr],er
 X3 4 add_rr,s
@@ -1502,16 +1560,41 @@ X3 pop
 X2 pop
 X3 jmp_rr
 
+\ [port] target-side 32-bit emitters. A 16-bit host cell cannot
+\ hold it whole, so the halves are passed apart. They are native
+\ because their bodies are emitted before the compiler
+\ words they otherwise need (literal, ret,).
+native x32,
+binary
+X3 10 shl_rr,s
+X0 X3 or_rr,rr
+x' d, call
+ret
+
+native x32!
+binary
+X17 X0 mov_rr,rr
+tos_load
+X17 10 shl_rr,s
+X0 X17 or_rr,rr
+X17 X3 mov_rr,rr
+tos_store
+X0 X17 mov_rr,rr
+x' d! call
+ret
+
 \ execution control
 
 \ return from computation (target-side emitter; this is what a
 \ compile mode behavior calls to emit a return into the code being compiled.
 \ Keep in sync with the `ret` assembler macro above.)
 native ret,
-F84087F0 xliteral
-x' d, call
-D61F0200 xliteral
-x' d, call
+87F0 xliteral
+F840 xliteral
+x' x32, call
+0200 xliteral
+D61F xliteral
+x' x32, call
 ret
 
 \ end of computation
@@ -1731,12 +1814,16 @@ x' drop does
 
 {: literal
 here 3 + 3 and 3 xor allot
-F9000260 d,
-91002273 d,
-dup FFFF and 5 lshift D2800000 or d,
-dup 10 rshift FFFF and 5 lshift F2A00000 or d,
-dup 20 rshift FFFF and 5 lshift F2C00000 or d,
-30 rshift FFFF and 5 lshift F2E00000 or d,
+0260 F900 x32,
+2273 9100 x32,
+dup FFFF and
+dup 5 lshift FFFF and swap B rshift D280 or x32,
+dup 10 rshift FFFF and
+dup 5 lshift FFFF and swap B rshift F2A0 or x32,
+dup 20 rshift FFFF and
+dup 5 lshift FFFF and swap B rshift F2C0 or x32,
+30 rshift FFFF and
+dup 5 lshift FFFF and swap B rshift F2E0 or x32,
 }
 
 {: >lit execute }~ literal
@@ -1751,10 +1838,16 @@ x' >lit does
 
 {: {{
 here 3 + 3 and 3 xor allot
-here 10 + dup FFFF and 5 lshift 10 or D2800000 or d,
-10 rshift FFFF and 5 lshift 10 or F2A00000 or d,
-F81F8FF0 d,
-14000000 }~ d,
+here 10 +
+dup FFFF and 5 lshift 10 or
+over FFFF and B rshift D280 or
+x32,
+10 rshift FFFF and
+dup 5 lshift 10 or
+swap B rshift F2A0 or
+x32,
+8FF0 F81F x32,
+0 1400 }~ x32,
 
 \ Close a quotation. Its body lives inline in the code stream and may end
 \ with arbitrary-length data (e.g. a string literal), so align to 4 bytes
@@ -1762,10 +1855,13 @@ F81F8FF0 d,
 \ instructions, and thus branch targets and displacements, are 4-byte units.
 {: }}
 here 3 + 3 and 3 xor allot
-dup here swap - 4 + 2 rshift 3FFFFFF and 14000000 or swap 4 - d!
-F9000260 d,
-91002273 d,
-F84087E0 d,
+dup here swap - 4 + 2 rshift
+swap 4 - >r
+dup FFFF and swap drop
+1400 r> x32!
+0260 F900 x32,
+2273 9100 x32,
+87E0 F840 x32,
 }
 
 \ self references
@@ -1774,7 +1870,10 @@ F84087E0 d,
 native }~self
 2 lb jmp \ not permitted in interpret mode
 
-{ drop dup here - 2 rshift 3FFFFFF and 14000000 or d, }~fail
+{ drop dup here - 2 rshift
+  dup FFFF and
+  swap 10 rshift 3FF and 1400 or
+  x32, drop }~fail
 
 does
 
@@ -1986,7 +2085,7 @@ ret, }
 \ create effect with default handler
 {: effect ( x -( heap )- )
 create redefine
-58000070 d, F9400210 d, D61F0200 d,
+0070 5800 x32, 0210 F940 x32, 0200 D61F x32,
 here 8 + ,
 }~ ,
 
