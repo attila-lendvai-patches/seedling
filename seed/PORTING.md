@@ -304,6 +304,16 @@ Known traps from this port:
 - `shl`/`shr` put `immr` in bits 16..21, where a 16-bit `x32,` silently
   dropped it.
 
+## Postponed definitions
+
+`postpone` creates the entry and reserves a forward jump. `{::` finds
+the entry, patches that jump to the body it is about to compile, and
+leaves the token on the patched jump. Emit the placeholder with the
+target's jump width and patch only the branch field; do not write a
+whole host cell over it. `link` aligns the next entry, so `postpone`
+needs no extra padding. Mark the patched instruction for an icache
+sync where the target requires it.
+
 ## ELF output
 
 Sprouts keep section headers. The current valid layout is:

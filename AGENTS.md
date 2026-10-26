@@ -109,11 +109,41 @@ rm -rf tools-for-build/build && bash tools-for-build/test.sh
 
 CI installs the dependencies and runs the same script.
 
+## Dependencies
+
+Do not assume or add external dependencies beyond the whitelist below.
+If a task needs one, or an unlisted tool would simplify it
+substantially, ask first and explain the tradeoff.
+
+Whitelisted existing dependencies:
+
+* The standard shell and the usual POSIX/core utilities.
+* `git`, `make`, `gcc` (`build-essential`) to build the pinned
+  `z80sim`.
+* `qemu-user-static` and `binfmt-support` to execute foreign targets.
+* `elfutils` (`eu-elflint`) for ELF validation.
+* `libz80ex-dev` for `z80sim`.
+* The pinned `z80sim` checkout under `tools-for-build/z80sim/`.
+
+`sudo`, `apt-get`, and `update-binfmts` are for CI setup only. Anything
+not listed above is not whitelisted.
+
 ## Porting conventions
 
 Start from the closest existing port. Each source begins with `output` on
 the first line, then states its requirements, the assembler's scope, the
 TOS/register roles, and a `[port]` geometry block.
+
+Each source that emits assembly also states its register roles, call
+convention, and clobber rules at the top of the file. A port defines its
+own internal ABI; do not assume the platform's C ABI for the port's own
+words. Follow the platform's syscall ABI only at the syscall boundary,
+and name both surfaces explicitly.
+
+A helper call may clobber only the registers and flags its contract
+names. A helper that runs in the middle of a word preserves TOS, the data
+stack pointer, the shadow call stack pointer, SP, and the carry flag. The
+caller saves anything else that must survive.
 
 Keep the target description explicit and local:
 
@@ -193,6 +223,8 @@ ELF code.
   are part of the design; they keep the return stack bounded.
 * Keep architecture-dependent code in `[port]` blocks; shared logic
   belongs in the common part of the file.
+* When a large constant is assembled in several steps, comment the last
+  line with the complete constant.
 * Use one space after a sentence-ending period, never two: in
   documentation, code comments, and commit messages. Spacing used to
   align columns in code or comment tables is layout, not prose.
@@ -203,6 +235,25 @@ Use an area prefix and the imperative mood: `seed: ...`, `sprout: ...`,
 `ci: ...`, `aarch64: ...`, `i386: ...`. Explain the why and any invariant
 that was verified in the body. Rebuild generated binaries in the same
 series as the source change, and say what was compared.
+
+Keep the subject within 50 characters (72 is the hard limit), capitalize
+its first word after the area prefix, and do not end it with a period.
+Separate it from the body with one blank line and hard-wrap the body at
+72 columns.
+
+Use `housekeeping:` when a commit changes no behavior: comments, prose,
+formatting, or anything else that cannot alter emitted bytes. It means
+the commit is safe to ignore when bisecting or looking for a bug, and
+it promises that every test and byte-for-byte comparison is unchanged.
+A change that can alter output is never housekeeping.
+
+Use `doc:` when a commit adds or rewrites documentation.
+
+Keep commits isolated by territory so they can be cherry-picked
+independently: code, tests, documentation, and generated binaries
+belong in separate commits. Do not mix them. Test scripts and probe
+sources go with the test change. A test commit that exposes a bug
+should come before the fix commit.
 
 Do not amend commits unless explicitly requested. Add a new commit
 instead.
