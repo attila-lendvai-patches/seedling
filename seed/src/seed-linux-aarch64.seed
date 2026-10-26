@@ -1306,7 +1306,7 @@ X3 4 mov_rr,x
 1 lb call
 X3 DP mov_rr,[aa]
 X16 70 mov_rr,x
-X16 1000 MOVK_r,u16,
+X16 1000 MOVK_r,u16,          \ 0x10000070
 X3 X16 mov_[rr],er
 X3 4 add_rr,s
 DP X3 mov_[aa],rr
@@ -1314,7 +1314,7 @@ X3 4 mov_rr,x
 1 lb call
 X3 DP mov_rr,[aa]
 X16 8FB0 mov_rr,x
-X16 F81F MOVK_r,u16,
+X16 F81F MOVK_r,u16,          \ 0xf81f8fb0
 X3 X16 mov_[rr],er
 X3 4 add_rr,s
 DP X3 mov_[aa],rr
@@ -1326,10 +1326,10 @@ X16 X0 mov_rr,rr
 X16 X3 sub_rr,rr
 X16 2 shr_rr,s
 X17 FFFF mov_rr,x
-X17 3FF MOVK_r,u16,
+X17 3FF MOVK_r,u16,          \ 0x3ffffff
 X16 X17 and_rr,rr
 X17 0 mov_rr,x
-X17 1400 MOVK_r,u16,
+X17 1400 MOVK_r,u16,          \ 0x14000000
 X16 X17 or_rr,rr
 X3 X16 mov_[rr],er
 X3 4 add_rr,s
@@ -1348,10 +1348,10 @@ X16 X0 mov_rr,rr
 X16 X3 sub_rr,rr
 X16 2 shr_rr,s
 X17 FFFF mov_rr,x
-X17 3FF MOVK_r,u16,
+X17 3FF MOVK_r,u16,          \ 0x3ffffff
 X16 X17 and_rr,rr
 X17 0 mov_rr,x
-X17 1400 MOVK_r,u16,
+X17 1400 MOVK_r,u16,          \ 0x14000000
 X16 X17 or_rr,rr
 X3 X16 mov_[rr],er
 X3 4 add_rr,s
