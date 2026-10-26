@@ -515,7 +515,7 @@ F constant X15
 {: push ( reg -- ) 1F8FA0 or F81F8C00 or d, }
 {: pop ( reg -- ) F84087A0 or d, }
 
-\ Instruction cache maintenance.  Code written to the heap
+\ Instruction cache maintenance. Code written to the heap
 \ must be cleaned to the point of unification and the
 \ instruction cache invalidated before it can be executed.
 {: DC_CVAU ( reg -- ) D50B7B20 or d, }
@@ -1479,7 +1479,7 @@ XSYNC_FROM rcx mov_[aa],rr
 ret
 
 \ Synchronize the instruction cache with code emitted since
-\ the last sync.  XSYNC_FROM is the low-water mark: it is
+\ the last sync. XSYNC_FROM is the low-water mark: it is
 \ lowered when a previously emitted instruction is patched.
 \ A 16-byte stride reaches every cache line because 16 bytes
 \ is the smallest possible line size.
@@ -2572,7 +2572,7 @@ x' drop does
 \ xcode_align_bytes is the instruction boundary. Emit it as a
 \ target constant, then derive xcode_align_addr and xcode_align.
 \ Target-side words; x marks this cross/target code-alignment
-\ family.  The host uses xcode_align_bytes with its own align.
+\ family. The host uses xcode_align_bytes with its own align.
 native xcode_align_bytes
 xcode_align_bytes xliteral
 ret

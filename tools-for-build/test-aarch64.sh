@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Host: aarch64.  The "aarch64" suffix names the assumed *host*
+# Host: aarch64. The "aarch64" suffix names the assumed *host*
 # architecture, not the target: this suite cross-compiles to every
 # Seed and Sprout port.
 

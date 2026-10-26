@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Shared by the test-<arch>.sh scripts.  The suffix in those names is
+# Shared by the test-<arch>.sh scripts. The suffix in those names is
 # the assumed host architecture, not the target architecture: every
 # suite cross-compiles to all the Seed and Sprout ports.
 
@@ -300,7 +300,7 @@ host_suite() {
 
 # The i386 host can compile the 16-bit-safe aarch64 Seed, but not the
 # aarch64 Sprout: its floating-point constants are 64-bit and do not
-# fit the i386 host's cells.  This suite covers the i386 Seed and
+# fit the i386 host's cells. This suite covers the i386 Seed and
 # Sprout, the aarch64 Seed, and the amd64/i386 cross-checks.
 i386_suite() {
     prepare_build
