@@ -104,10 +104,15 @@ Keep the target description explicit and local:
 ```
 xcell_bits  xcelllog  xcell  xcell1-  xcell_mask
 xcells  xalign  xcell+
-xcode_align (only where instructions need alignment)
+xcode_align_bytes (only where instructions need alignment)
 xcall_size  xquote_open_size  xrel_size
 xword_comp  xname_from_token
 ```
+
+Where instructions need alignment, emit `xcode_align_bytes` as a target
+constant and derive `xcode_align_addr`/`xcode_align` from it instead of
+repeating the size.  These are target-side words; the host uses
+`xcode_align_bytes align`.
 
 The z80 has threaded code and no token/comp cells; do not force x86-style
 fields onto it. Use the smallest geometry that is true, and keep code
