@@ -299,6 +299,51 @@ source_line_check() {
     [ "$bad" -eq 0 ]
 }
 
+# List, but do not fail, numerals the compiling host cannot hold in
+# 16 bits. A wide literal is fine when the code truncates it before
+# use; the list is a review aid. All sources are written in hex.
+source_literal_check() {
+    echo "==> source literals"
+    cd "$ROOT"
+    local f findings="$BUILD/.source-literals"
+    : >"$findings"
+    for f in seed/src/*.seed sprout/src/*.seed; do
+        awk '
+            {
+                line = $0
+                code = ""
+                string = 0
+                n = length(line)
+                for (i = 1; i <= n; i++) {
+                    c = substr(line, i, 1)
+                    if (string) {
+                        if (c == "\\") { i++; continue }
+                        if (c == "\"") string = 0
+                        continue
+                    }
+                    if (c == "\\") break
+                    if (c == "\"") { string = 1; continue }
+                    code = code c
+                }
+                m = split(code, tok, /[ \t]+/)
+                for (j = 1; j <= m; j++) {
+                    if (tok[j] ~ /^[0-9A-F]+$/ && length(tok[j]) > 4)
+                        printf "%s:%d: %s\n", FILENAME, FNR, tok[j]
+                }
+            }
+        ' "$f" >>"$findings"
+    done
+    if [ -s "$findings" ]; then
+        while IFS= read -r f; do
+            printf '\033[33m%s\033[0m\n' "$f" >&2
+        done <"$findings"
+        printf '\033[33mwarning: %s source literals are wider than 16 bits\033[0m\n' \
+            "$(wc -l <"$findings")" >&2
+    fi
+    rm -f "$findings"
+    return 0
+}
+
 committed_binary_check() {
     echo "==> committed Seed binaries"
     echo "    bootstrap: $(rel "$BOOTSTRAP")"
@@ -426,6 +471,7 @@ host_suite() {
     echo "    bootstrap: $(rel "$BOOTSTRAP")"
     if [ "${TEST_CHECKS_DONE:-0}" != 1 ]; then
         source_line_check
+        source_literal_check
         committed_binary_check
     fi
     print_missing_targets
@@ -461,6 +507,7 @@ host_suite_full() {
     echo "    bootstrap: $(rel "$BOOTSTRAP")"
     if [ "${TEST_CHECKS_DONE:-0}" != 1 ]; then
         source_line_check
+        source_literal_check
         committed_binary_check
     fi
 
@@ -619,6 +666,7 @@ i386_suite() {
     echo "    bootstrap: $(rel "$BOOTSTRAP")"
     if [ "${TEST_CHECKS_DONE:-0}" != 1 ]; then
         source_line_check
+        source_literal_check
         committed_binary_check
     fi
     print_missing_targets
@@ -657,6 +705,7 @@ i386_suite_full() {
     echo "    bootstrap: $(rel "$BOOTSTRAP")"
     if [ "${TEST_CHECKS_DONE:-0}" != 1 ]; then
         source_line_check
+        source_literal_check
         committed_binary_check
     fi
 
