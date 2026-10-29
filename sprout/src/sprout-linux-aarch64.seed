@@ -38,11 +38,10 @@ output \ this must be on the first line
 hex
 
 \ [port] IMAGE BASE
-\ The target image is loaded at ximage_base and must stay below
-\ 18000 (the system variables). Absolute addresses are emitted
-\ as ximage_base + low16(image offset).
-10000 constant ximage_base
-ximage_base 10 rshift constant ximage_base_hi
+\ Image base: ximage_base_hi:low16(offset). The image must stay
+\ below 18000 (the system variables), and no host value is wider
+\ than 16 bits.
+1 constant ximage_base_hi
 
 \ [port] MEMORY MAP
 \ The loaded segment ends at 400000.
@@ -128,7 +127,10 @@ xcell 2 * constant xname_from_token
 \ 16-bit little-endian store
 {: w!		dup >r 1+ >r lsb swap r> c! r> c! }
 
-\ [port] store a 32-bit value as two 16-bit words
+\ [port] emit/store a 32-bit value as two 16-bit words; a 16-bit
+\ host cell cannot hold it whole; pass the halves apart.
+\ ( low16 high16 -- )
+{: x32,		swap w, w, }
 \ ( low16 high16 addr -- )
 {: x32!		>r swap r> dup 2 + >r w! r> w! }
 
@@ -193,26 +195,20 @@ create labels
 \ Backward label address to stack (absolute)
 {: label	label_cell @ }
 
-\ Converts the address to a relative backward offset, divided by
-\ 4 as expected by the ISA. Then shifts the offset into position
-\ for the instruction, i.e. lshifts with low_bits bits, and
-\ clears out high_bits number of bits from the left. Fails if
-\ out of range.
-{: label_offset ( addr high_bits low_bits -- off off)
-  swap >r >r                    \ r: high_bits low_bits
-  $ -                           \ offset
-  2 rshift                      \ divided by 4
-  r> lshift                     \ left by low_bits
-  dup                           \ ds: offset, offset
-  10 rshift                     \ ds: offset, offset_high16
-  10 r> -                       \ 16 - high_bits
-  bit_size_to_mask dup >r       \ mask; saved, too
-  invert FFFF and               \ limit mask to 16 bits
-                                \ ds: offset, o_high16, mask
-  dup third and = drop \ fail if the lost part is not all 1's
-  r> and                        \ drop opcode bits from upper16
-  swap
-  \ ds: offset_high16, offset (full size, but fine for w, )
+\ Backward label offset, divided by 4 as the ISA expects. Split
+\ into the low 16 bits and the sign bits above them; high_bits
+\ and low_bits describe the destination field.
+{: label_offset ( addr high_bits low_bits -- high_imm low16 )
+  >r >r                 \ addr ; r: low_bits high_bits
+  $ swap -              \ here-addr (backward distance)
+  2 rshift              \ instruction offset, divided by 4
+  0 swap -              \ signed instruction offset
+  r> r>                 \ imm high_bits low_bits
+  swap >r               \ imm low_bits ; r: high_bits
+  over swap lshift      \ imm low16
+  swap 8000 and F rshift \ low16 sign
+  r> 10 swap - bit_size_to_mask
+  * swap
 }
 
 \ Emit a relative jump offset (backward).
@@ -232,12 +228,15 @@ create labels
   here swap label_cell !
 }
 
-\ This properly handles >16 bit forward offsets on hosts with at
-\ least 32 bit cells, but it also doesn't fail on 16 bit hosts.
-{: label_offset_f ( place -- offset_high16 offset )
-  dup here swap - 2 rshift    \ ds: place, place, offset/4
-  swap c@ 0F and lshift       \ shift the offset into place
-  dup 10 rshift               \ ds: offset, offset_high16
+\ Forward label offset, split into high and low halves.
+\ The patch site holds the field's low-bit position.
+{: label_offset_f ( place -- high_imm low16 )
+  dup here swap - 2 rshift    \ place, offset/4
+  swap c@ 0F and              \ offset, low_bits
+  dup >r                      \ offset, low_bits ; r: low_bits
+  over swap lshift            \ offset, low16
+  swap                        \ low16, offset
+  r> 10 swap - rshift         \ low16, high_imm
   swap
 }
 
@@ -312,97 +311,150 @@ F constant X15
 
 \ Immediate construction
 
+\ The imm16 field crosses the 16-bit boundary: its low 11 bits
+\ are in the low half, its high 5 bits in the high half.
 {: MOVZ_r,u16, ( reg imm -- )
-  swap over FFFF and 5 lshift over or D2800000 or d,
-  drop drop
+  swap over FFFF and 5 lshift over or
+  swap >r swap FFFF and B rshift D280 or
+  x32, r> drop
 }
 
 {: MOVK_r,u16, ( reg imm -- )
-  swap over FFFF and 5 lshift over or F2A00000 or d,
-  drop drop
+  swap over FFFF and 5 lshift over or
+  swap >r swap FFFF and B rshift F2A0 or
+  x32, r> drop
+}
+
+{: MOVK_r,u16,lsl32 ( reg imm -- )
+  swap over FFFF and 5 lshift over or
+  swap >r swap FFFF and B rshift F2C0 or
+  x32, r> drop
+}
+
+{: MOVK_r,u16,lsl48 ( reg imm -- )
+  swap over FFFF and 5 lshift over or
+  swap >r swap FFFF and B rshift F2E0 or
+  x32, r> drop
 }
 
 {: mov_rr,x ( reg imm -- )
   swap
-  over FFFF and 5 lshift over or D2800000 or d,
-  over 10 rshift FFFF and 5 lshift over or F2A00000 or d,
-  over 20 rshift FFFF and 5 lshift over or F2C00000 or d,
-  over 30 rshift FFFF and 5 lshift over or F2E00000 or d,
-  drop drop
+  over FFFF and 5 lshift over or
+  swap >r swap FFFF and B rshift D280 or
+  x32, r>
+  0 5 lshift over or F2A0 x32,
+  0 5 lshift over or F2C0 x32,
+  0 5 lshift over or F2E0 x32,
+  drop
+}
+
+\ A 64-bit immediate from its four 16-bit chunks, low first.
+{: mov_rr,x4 ( reg lo16 h1 h2 h3 -- )
+  >r >r >r
+  over >r MOVZ_r,u16, r>
+  r> over >r MOVK_r,u16, r>
+  r> over >r MOVK_r,u16,lsl32 r>
+  r> MOVK_r,u16,lsl48
 }
 
 {: mov_rr,xx ( reg imm -- ) mov_rr,x }
 
 {: mov_rr,aa ( reg addr -- )
   swap
-  over FFFF and 5 lshift over or D2800000 or d,
-  1 5 lshift over or F2A00000 or d,
-  drop drop
+  over FFFF and 5 lshift over or
+  swap >r swap FFFF and B rshift D280 or
+  x32, r>
+  ximage_base_hi 5 lshift over or F2A0 x32,
+  drop
 }
 
 \ Register to register operations
 
 {: MOV_r,r, ( dst src -- )
-  10 lshift swap or AA0003E0 or d,
+  over 3E0 or swap AA00 or x32, drop
 }
 
 {: ADD_r,r, ( dst src -- )
-  10 lshift swap dup 5 lshift or or 8B000000 or d,
+  over dup 5 lshift or swap 8B00 or x32, drop
 }
 
 {: ADDS_r,r, ( dst src -- )
-  10 lshift swap dup 5 lshift or or AB000000 or d,
+  over dup 5 lshift or swap AB00 or x32, drop
 }
 
 {: SUB_r,r, ( dst src -- )
-  10 lshift swap dup 5 lshift or or CB000000 or d,
+  over dup 5 lshift or swap CB00 or x32, drop
 }
 
 {: SUBS_r,r, ( dst src -- )
-  10 lshift swap dup 5 lshift or or EB000000 or d,
+  over dup 5 lshift or swap EB00 or x32, drop
 }
 
 {: AND_r,r, ( dst src -- )
-  10 lshift swap dup 5 lshift or or 8A000000 or d,
+  over dup 5 lshift or swap 8A00 or x32, drop
 }
 
 {: ORR_r,r, ( dst src -- )
-  10 lshift swap dup 5 lshift or or AA000000 or d,
+  over dup 5 lshift or swap AA00 or x32, drop
 }
 
 {: ANDS_r,r, ( dst src -- )
-  10 lshift swap dup 5 lshift or or EA000000 or d,
+  over dup 5 lshift or swap EA00 or x32, drop
 }
 
-
 {: EOR_r,r, ( dst src -- )
-  10 lshift swap dup 5 lshift or or CA000000 or d,
+  over dup 5 lshift or swap CA00 or x32, drop
 }
 
 \ Register to immediate operations
 
 {: ADD_r,s, ( reg imm -- )
-  A lshift swap dup dup 5 lshift or or or 91000000 or d,
+  over dup 5 lshift or >r
+  dup 6 rshift >r
+  3F and A lshift
+  r> 9100 or
+  swap r> or
+  swap x32, drop
 }
 
 {: ADDS_r,s, ( reg imm -- )
-  A lshift swap dup dup 5 lshift or or or B1000000 or d,
+  over dup 5 lshift or >r
+  dup 6 rshift >r
+  3F and A lshift
+  r> B100 or
+  swap r> or
+  swap x32, drop
 }
 
 {: SUB_r,s, ( reg imm -- )
-  A lshift swap dup dup 5 lshift or or or D1000000 or d,
+  over dup 5 lshift or >r
+  dup 6 rshift >r
+  3F and A lshift
+  r> D100 or
+  swap r> or
+  swap x32, drop
 }
 
 {: SUBS_r,s, ( reg imm -- )
-  A lshift swap dup dup 5 lshift or or or F1000000 or d,
+  over dup 5 lshift or >r
+  dup 6 rshift >r
+  3F and A lshift
+  r> F100 or
+  swap r> or
+  swap x32, drop
 }
 
 {: CMP_r,r, ( left right -- )
-  10 lshift swap 5 lshift or EB00001F or d,
+  over 5 lshift 1F or swap EB00 or x32, drop
 }
 
 {: CMP_r,s, ( reg imm -- )
-  A lshift swap 5 lshift or F100001F or d,
+  over 5 lshift 1F or >r
+  dup 6 rshift >r
+  3F and A lshift
+  r> F100 or
+  swap r> or
+  swap x32, drop
 }
 
 \ AArch64 has no flag-setting ORR; emit ORR plus CMP dst,#0.
@@ -415,40 +467,40 @@ F constant X15
 \ Memory operations
 
 {: LDR_r,[r], ( dst base -- )
-  5 lshift swap or F9400000 or d,
+  5 lshift swap or F940 x32,
 }
 
 {: STR_r,[r], ( base src -- )
-  swap 5 lshift swap or F9000000 or d,
+  swap 5 lshift swap or F900 x32,
 }
 
 {: LDR_er,[r], ( dst base -- )
-  5 lshift swap or B9400000 or d,
+  5 lshift swap or B940 x32,
 }
 
 {: STR_er,[r], ( base src -- )
-  swap 5 lshift swap or B9000000 or d,
+  swap 5 lshift swap or B900 x32,
 }
 
 {: LDR_rl,[r], ( dst base -- )
-  5 lshift swap or 39400000 or d,
+  5 lshift swap or 3940 x32,
 }
 
 {: STR_rl,[r], ( base src -- )
-  swap 5 lshift swap or 39000000 or d,
+  swap 5 lshift swap or 3900 x32,
 }
 
 {: STRB_16,[r], ( base -- )
-  5 lshift 10 or 39000000 or d,
+  5 lshift 10 or 3900 x32,
 }
 \ These move the call-stack pointer (X29), not the hardware SP:
 \ SP must stay 16-byte aligned for the kernel.
 {: mov_from_sp ( dst -- )
-  910003A0 or d,
+  3A0 or 9100 x32,
 }
 
 {: mov_to_sp ( src -- )
-  5 lshift 91000000 or 1D or d,
+  5 lshift 1D or 9100 x32,
 }
 
 {: movSP,[aa] ( addr -- )
@@ -459,9 +511,9 @@ F constant X15
   X16 swap mov_rr,aa X17 mov_from_sp X16 X17 STR_r,[r],
 }
 
-{: set_carry_add 9A9F37F2 d, }
-{: set_carry_sub 9A9F27F2 d, }
-{: set_carry_ne 9A9F07F2 d, }
+{: set_carry_add 37F2 9A9F x32, }
+{: set_carry_sub 27F2 9A9F x32, }
+{: set_carry_ne 07F2 9A9F x32, }
 
 \ Basic x86-compatible macro names used throughout
 
@@ -533,20 +585,20 @@ F constant X15
   drop
 }
 
-{: SVC D4000001 d, }
+{: SVC 1 D400 x32, }
 {: int_x SVC }
 
-{: push ( reg -- ) 1F8FA0 or F81F8C00 or d, }
-{: pop ( reg -- ) F84087A0 or d, }
+{: push ( reg -- ) 8FA0 or F81F x32, }
+{: pop ( reg -- ) 87A0 or F840 x32, }
 
 \ Instruction cache maintenance. Code written to the heap
 \ must be cleaned to the point of unification and the
 \ instruction cache invalidated before it can be executed.
-{: DC_CVAU ( reg -- ) D50B7B20 or d, }
-{: IC_IVAU ( reg -- ) D50B7520 or d, }
-{: DSB_ISH D5033B9F d, }
-{: ISB D5033FDF d, }
-{: NOT_r,r, ( reg -- ) dup 10 lshift swap or AA2003E0 or d, }
+{: DC_CVAU ( reg -- ) 7B20 or D50B x32, }
+{: IC_IVAU ( reg -- ) 7520 or D50B x32, }
+{: DSB_ISH 3B9F D503 x32, }
+{: ISB 3FDF D503 x32, }
+{: NOT_r,r, ( reg -- ) dup 3E0 or swap AA20 or x32, }
 
 \ Branch instructions
 
@@ -597,26 +649,26 @@ F constant X15
 \ x86-compatible branch names
 
 {: call ( addr -- )
-  $ xcall_size + ximage_base + X16 swap mov_rr,aa
+  $ xcall_size + X16 swap mov_rr,aa
   X16 push
   B.
 }
 {: call_f ( label -- )
-  $ xcall_size + ximage_base + X16 swap mov_rr,aa
+  $ xcall_size + X16 swap mov_rr,aa
   X16 push
   B._f
 }
 {: call_rr ( reg -- )
-  $ xcall_size + ximage_base + X16 swap mov_rr,aa
+  $ xcall_size + X16 swap mov_rr,aa
   X16 push
-  5 lshift D61F0000 or d,
+  5 lshift D61F x32,
 }
 {: jmp ( addr -- ) B. }
 {: jmp_s ( addr -- ) B. }
 {: jmp_f ( label -- ) B._f }
-{: jmp_rr ( reg -- ) 5 lshift D61F0000 or d, }
+{: jmp_rr ( reg -- ) 5 lshift D61F x32, }
 {: jmp_[aa] ( addr -- )
-  58000070 d, F9400210 d, D61F0200 d, a,
+  0070 5800 x32, 0210 F940 x32, 0200 D61F x32, a,
 }
 
 {: jc ( addr -- ) X18 0 cmp_rr,s B.NE }
@@ -665,40 +717,44 @@ F constant X15
 {: std }
 
 \ Shift instructions
+\ immr sits above bit 15, so build the high half apart.
 
 {: shl_rr,s ( reg imm -- )
-  dup 3F swap - A lshift >r
-  0 swap - 3F and 10 lshift r> or
-  over dup 5 lshift or or D3400000 or d, drop
+  over dup 5 lshift or
+  >r
+  dup 3F swap - A lshift
+  r> or
+  swap
+  0 swap - 3F and D340 or
+  x32, drop
 }
 
 {: shr_rr,s ( reg imm -- )
-  dup 10 lshift >r
-  drop
-  3F A lshift r> or
-  over dup 5 lshift or or D3400000 or d, drop
+  over dup 5 lshift or
+  3F A lshift or
+  swap
+  D340 or
+  x32, drop
 }
 
 {: shl_rr,cl ( reg -- )
-  dup 5 lshift or 30000 or 9AC02000 or d,
+  dup 5 lshift or 2000 or 9AC3 x32,
 }
 
 {: shr_rr,cl ( reg -- )
-  dup 5 lshift or 30000 or 9AC02400 or d,
+  dup 5 lshift or 2400 or 9AC3 x32,
 }
 
 {: sar_rr,cl ( reg -- )
-  dup 5 lshift or 30000 or 9AC02800 or d,
+  dup 5 lshift or 2800 or 9AC3 x32,
 }
 
 {: rcr_rr,1 ( reg -- )
   \ reg = (reg >> 1) | ((carry & 1) << 63)
-  dup 5 lshift or D341FC00 or d,	\ LSR reg, reg, #1
-  92400250 d,				\ AND X16, X18, #1
-  D3410210 d,				\ LSL X16, X16, #63
-  dup dup 5 lshift or 100000 or
-  AA000000 or d,	\ ORR reg, reg, X16
-  drop
+  dup 5 lshift FC00 or D341 x32,	\ LSR reg, reg, #1
+  0250 9240 x32,			\ AND X16, X18, #1
+  0210 D341 x32,			\ LSL X16, X16, #63
+  dup dup 5 lshift or AA10 x32, drop	\ ORR reg, reg, X16
 }
 
 {: rep_movsq }
@@ -714,24 +770,27 @@ F constant X15
 
 {: mul_rr ( reg -- )
   X16 X0 MOV_r,r,
-  dup 10 lshift 200 or 9B007C00 or d,
-  10 lshift 200 or 2 or 9BC07C00 or d,
+  dup 9B00 or 7E00 swap x32,
+  dup 9BC0 or 7E02 swap x32,
+  drop
 }
 
 {: div_rr ( reg -- )
-  dup 10 lshift 10 or 9AC00800 or d,
-  10 lshift 200 or 2 or 9B008000 or d,
+  dup 9AC0 or 810 swap x32,
+  dup 9B00 or 8202 swap x32,
+  drop
   X0 X16 MOV_r,r,
 }
 
 {: idiv_rr ( reg -- )
-  dup 10 lshift 10 or 9AC00C00 or d,
-  10 lshift 200 or 2 or 9B008000 or d,
+  dup 9AC0 or 0C10 swap x32,
+  dup 9B00 or 8202 swap x32,
+  drop
   X0 X16 MOV_r,r,
 }
 
-{: not_rr AA2003E0 d, }
-{: neg_rr CB0003E0 d, }
+{: not_rr 3E0 AA20 x32, }
+{: neg_rr 3E0 CB00 x32, }
 
 \ syscall
 
@@ -793,47 +852,51 @@ rax rcx cmp_rr,rr
 8 constant D8
 9 constant D9
 
-\ move a 64-bit constant into a D register
-{: d_const ( bits dreg -- )
-  swap X16 swap mov_rr,x
-  9E670200 or d,
+\ move a 64-bit constant into a D register, from four 16-bit
+\ chunks, low first. The host never holds the whole constant.
+{: d_const ( lo16 h1 h2 h3 dreg -- )
+  >r >r >r >r >r X16 r> r> r> r>
+  mov_rr,x4
+  r> 0200 or 9E67 x32,
 }
 
 \ move between general purpose and FP registers
-{: FMOV_d,x ( dreg xreg -- ) 5 lshift swap or 9E670000 or d, }
-{: FMOV_x,d ( xreg dreg -- ) 5 lshift swap or 9E660000 or d, }
+{: FMOV_d,x ( dreg xreg -- ) 5 lshift swap or 9E67 x32, }
+{: FMOV_x,d ( xreg dreg -- ) 5 lshift swap or 9E66 x32, }
 
 \ three-operand FP arithmetic
-{: fop3, ( dst left right base -- )
-  >r
+{: fop3, ( dst left right base_low base_high -- )
+  >r >r
   10 lshift swap 5 lshift or swap or
-  r> or d,
+  r> or
+  r> x32,
 }
-{: FADD_d,d,d ( dst left right -- ) 1E602800 fop3, }
-{: FSUB_d,d,d ( dst left right -- ) 1E603800 fop3, }
-{: FMUL_d,d,d ( dst left right -- ) 1E600800 fop3, }
-{: FDIV_d,d,d ( dst left right -- ) 1E601800 fop3, }
+{: FADD_d,d,d ( dst left right -- ) 2800 1E60 fop3, }
+{: FSUB_d,d,d ( dst left right -- ) 3800 1E60 fop3, }
+{: FMUL_d,d,d ( dst left right -- ) 0800 1E60 fop3, }
+{: FDIV_d,d,d ( dst left right -- ) 1800 1E60 fop3, }
 
 \ two-operand FP operations
-{: fun2, ( dst src base -- )
-  >r
+{: fun2, ( dst src base_low base_high -- )
+  >r >r
   dup 5 lshift swap drop or
-  r> or d,
+  r> or
+  r> x32,
 }
-{: FABS_d,d ( dst src -- ) 1E60C000 fun2, }
-{: FNEG_d,d ( dst src -- ) 1E614000 fun2, }
-{: FRINTM_d,d ( dst src -- ) 1E654000 fun2, }
-{: FRINTZ_d,d ( dst src -- ) 1E65C000 fun2, }
+{: FABS_d,d ( dst src -- ) C000 1E60 fun2, }
+{: FNEG_d,d ( dst src -- ) 4000 1E61 fun2, }
+{: FRINTM_d,d ( dst src -- ) 4000 1E65 fun2, }
+{: FRINTZ_d,d ( dst src -- ) C000 1E65 fun2, }
 
 \ FP comparison
 {: FCMP_d,d ( left right -- )
-  10 lshift swap 5 lshift or 1E602000 or d, }
-{: FCMP_d,0 ( reg -- ) 5 lshift 1E602008 or d, }
+  10 lshift swap 5 lshift or 1E60 x32, }
+{: FCMP_d,0 ( reg -- ) 5 lshift 2008 or 1E60 x32, }
 
 \ conversions
-{: SCVTF_d,x ( dreg xreg -- ) 5 lshift swap or 9E620000 or d, }
-{: FCVTMS_x,d ( xreg dreg -- ) 5 lshift swap or 9E700000 or d, }
-{: FCVTZS_x,d ( xreg dreg -- ) 5 lshift swap or 9E780000 or d, }
+{: SCVTF_d,x ( dreg xreg -- ) 5 lshift swap or 9E62 x32, }
+{: FCVTMS_x,d ( xreg dreg -- ) 5 lshift swap or 9E70 x32, }
+{: FCVTZS_x,d ( xreg dreg -- ) 5 lshift swap or 9E78 x32, }
 
 \ extra conditional branches for the FP code
 {: jle_fs ( label -- ) B.LE_f }
@@ -943,15 +1006,17 @@ rax swap mov_rr,aa
 
 {: x{{ ( -( heap )- a )
 xcode_align_bytes align
-$ xquote_open_size + ximage_base + X16 swap mov_rr,aa
+$ xquote_open_size + X16 swap mov_rr,aa
 X16 push
-14000000 d,
+0 w, 1400 w,
 }~ here
 
 {: x}} ( a -( heap )- )
 xcode_align_bytes align
-dup here swap - xrel_size + 2 rshift 3FFFFFF and
-14000000 or swap xrel_size - d!
+dup here swap - xrel_size + 2 rshift
+swap xrel_size - >r
+dup FFFF and swap drop
+1400 r> x32!
 tos_store
 X0 pop
 }
@@ -1532,14 +1597,16 @@ $ callcomp !
 X3 4 mov_rr,x
 1 label call
 X3 DP mov_rr,[aa]
-X16 10000070 mov_rr,x
+X16 70 mov_rr,x
+X16 1000 MOVK_r,u16,          \ 0x10000070
 X3 X16 mov_[rr],er
 X3 4 add_rr,s
 DP X3 mov_[aa],rr
 X3 4 mov_rr,x
 1 label call
 X3 DP mov_rr,[aa]
-X16 F81F8FB0 mov_rr,x
+X16 8FB0 mov_rr,x
+X16 F81F MOVK_r,u16,          \ 0xf81f8fb0
 X3 X16 mov_[rr],er
 X3 4 add_rr,s
 DP X3 mov_[aa],rr
@@ -1550,9 +1617,11 @@ x' xcall_check_range call
 X16 X0 mov_rr,rr
 X16 X3 sub_rr,rr
 X16 2 shr_rr,s
-X17 3FFFFFF mov_rr,x
+X17 FFFF mov_rr,x
+X17 3FF MOVK_r,u16,          \ 0x3ffffff
 X16 X17 and_rr,rr
-X17 14000000 mov_rr,x
+X17 0 mov_rr,x
+X17 1400 MOVK_r,u16,          \ 0x14000000
 X16 X17 or_rr,rr
 X3 X16 mov_[rr],er
 X3 4 add_rr,s
@@ -1570,9 +1639,11 @@ x' xcall_check_range call
 X16 X0 mov_rr,rr
 X16 X3 sub_rr,rr
 X16 2 shr_rr,s
-X17 3FFFFFF mov_rr,x
+X17 FFFF mov_rr,x
+X17 3FF MOVK_r,u16,          \ 0x3ffffff
 X16 X17 and_rr,rr
-X17 14000000 mov_rr,x
+X17 0 mov_rr,x
+X17 1400 MOVK_r,u16,          \ 0x14000000
 X16 X17 or_rr,rr
 X3 X16 mov_[rr],er
 X3 4 add_rr,s
@@ -1950,7 +2021,7 @@ effect input
 native _readfile
 X1 X0 mov_rr,rr \ pathname
 X2 0 mov_rr,x \ O_RDONLY
-X5 FFFFFFFFFFFFFF9C mov_rr,x \ AT_FDCWD
+X5 FF9C FFFF FFFF FFFF mov_rr,x4 \ AT_FDCWD: 0xFFFFFFFFFFFFFF9C
 sys.open syscall
 rax rax or_rr,rr
 2 label js
@@ -2014,6 +2085,34 @@ rcx pop
 rdx pop
 rcx jmp_rr
 
+\ [port] target-side 32-bit emitters. A 16-bit host cell cannot
+\ hold it whole, so the halves are passed apart. They are native
+\ because their bodies are emitted before the compiler
+\ words they otherwise need (literal, ret,).
+native x32,
+binary
+X3 10 shl_rr,s
+X0 X3 or_rr,rr
+x' d, call
+ret
+
+native x32!
+binary
+X17 X0 mov_rr,rr
+tos_load
+X17 10 shl_rr,s
+X0 X17 or_rr,rr
+X17 X3 mov_rr,rr
+X16 XSYNC_FROM mov_rr,[aa]
+X16 X17 cmp_rr,rr
+8 jb_fs
+XSYNC_FROM X17 mov_[aa],rr
+8 rlabel
+tos_store
+X0 X17 mov_rr,rr
+x' d! call
+ret
+
 \ execution control
 
 \ return from computation (target-side emitter; this is what a
@@ -2021,10 +2120,12 @@ rcx jmp_rr
 \ being compiled. Keep in sync with the `ret` assembler macro
 \ above.)
 native ret,
-F84087B0 xliteral
-x' d, call
-D61F0200 xliteral
-x' d, call
+87B0 xliteral
+F840 xliteral
+x' x32, call
+0200 xliteral
+D61F xliteral
+x' x32, call
 ret
 
 \ end of computation
@@ -2103,11 +2204,12 @@ ret
 \ execute computation with exception
 native catch
 binary			\ exception reference in rcx
-X4 X3 mov_rr,[rr]	\ first instruction is movz X3, slot_low16
+X4 X3 mov_rr,[rr]	\ movz X3, slot_low16
 X4 5 shr_rr,s
 X17 FFFF mov_rr,x
 X4 X17 and_rr,rr
-X17 10000 mov_rr,x
+X17 1 mov_rr,x
+X17 10 shl_rr,s		\ 0x10000
 X4 X17 or_rr,rr
 X2 X4 mov_rr,rr		\ exception handler slot pointer
 3 label jmp
@@ -2370,7 +2472,7 @@ ret
 \ stack one
 native 1.
 tos_store
-rax 3FF0000000000000 mov_rr,x
+rax 0000 0000 0000 3FF0 mov_rr,x4 \ 0x3FF0000000000000
 ret
 
 \ integer to floating point conversion
@@ -2461,67 +2563,67 @@ X2 7FF mov_rr,x
 X17 X17 X2 and_rr,rr
 X17 3FF sub_rr,s
 D1 X17 SCVTF_d,x
-X2 000FFFFFFFFFFFFF mov_rr,x
+X2 FFFF FFFF FFFF 000F mov_rr,x4 \ 0x000FFFFFFFFFFFFF
 X1 X1 X2 and_rr,rr
-X2 3FF0000000000000 mov_rr,x
+X2 0000 0000 0000 3FF0 mov_rr,x4 \ 0x3FF0000000000000
 X1 X1 X2 or_rr,rr
 D2 X1 FMOV_d,x
-3FF0000000000000 D3 d_const
+0000 0000 0000 3FF0 D3 d_const \ 0x3FF0000000000000
 D4 D2 D3 FSUB_d,d,d
 D5 D2 D3 FADD_d,d,d
 D6 D4 D5 FDIV_d,d,d
 D7 D6 D6 FMUL_d,d,d
-3F9F07C1F07C1F08 D8 d_const
+1F08 F07C 07C1 3F9F D8 d_const \ 0x3F9F07C1F07C1F08
 D8 D8 D7 FMUL_d,d,d
-3FA0842108421084 D9 d_const
+1084 0842 8421 3FA0 D9 d_const \ 0x3FA0842108421084
 D8 D8 D9 FADD_d,d,d
 D8 D8 D7 FMUL_d,d,d
-3FA1A7B9611A7B96 D9 d_const
+7B96 611A A7B9 3FA1 D9 d_const \ 0x3FA1A7B9611A7B96
 D8 D8 D9 FADD_d,d,d
 D8 D8 D7 FMUL_d,d,d
-3FA2F684BDA12F68 D9 d_const
+2F68 BDA1 F684 3FA2 D9 d_const \ 0x3FA2F684BDA12F68
 D8 D8 D9 FADD_d,d,d
 D8 D8 D7 FMUL_d,d,d
-3FA47AE147AE147B D9 d_const
+147B 47AE 7AE1 3FA4 D9 d_const \ 0x3FA47AE147AE147B
 D8 D8 D9 FADD_d,d,d
 D8 D8 D7 FMUL_d,d,d
-3FA642C8590B2164 D9 d_const
+2164 590B 42C8 3FA6 D9 d_const \ 0x3FA642C8590B2164
 D8 D8 D9 FADD_d,d,d
 D8 D8 D7 FMUL_d,d,d
-3FA8618618618618 D9 d_const
+8618 1861 6186 3FA8 D9 d_const \ 0x3FA8618618618618
 D8 D8 D9 FADD_d,d,d
 D8 D8 D7 FMUL_d,d,d
-3FAAF286BCA1AF28 D9 d_const
+AF28 BCA1 F286 3FAA D9 d_const \ 0x3FAAF286BCA1AF28
 D8 D8 D9 FADD_d,d,d
 D8 D8 D7 FMUL_d,d,d
-3FAE1E1E1E1E1E1E D9 d_const
+1E1E 1E1E 1E1E 3FAE D9 d_const \ 0x3FAE1E1E1E1E1E1E
 D8 D8 D9 FADD_d,d,d
 D8 D8 D7 FMUL_d,d,d
-3FB1111111111111 D9 d_const
+1111 1111 1111 3FB1 D9 d_const \ 0x3FB1111111111111
 D8 D8 D9 FADD_d,d,d
 D8 D8 D7 FMUL_d,d,d
-3FB3B13B13B13B14 D9 d_const
+3B14 13B1 B13B 3FB3 D9 d_const \ 0x3FB3B13B13B13B14
 D8 D8 D9 FADD_d,d,d
 D8 D8 D7 FMUL_d,d,d
-3FB745D1745D1746 D9 d_const
+1746 745D 45D1 3FB7 D9 d_const \ 0x3FB745D1745D1746
 D8 D8 D9 FADD_d,d,d
 D8 D8 D7 FMUL_d,d,d
-3FBC71C71C71C71C D9 d_const
+C71C 1C71 71C7 3FBC D9 d_const \ 0x3FBC71C71C71C71C
 D8 D8 D9 FADD_d,d,d
 D8 D8 D7 FMUL_d,d,d
-3FC2492492492492 D9 d_const
+2492 9249 4924 3FC2 D9 d_const \ 0x3FC2492492492492
 D8 D8 D9 FADD_d,d,d
 D8 D8 D7 FMUL_d,d,d
-3FC999999999999A D9 d_const
+999A 9999 9999 3FC9 D9 d_const \ 0x3FC999999999999A
 D8 D8 D9 FADD_d,d,d
 D8 D8 D7 FMUL_d,d,d
-3FD5555555555555 D9 d_const
+5555 5555 5555 3FD5 D9 d_const \ 0x3FD5555555555555
 D8 D8 D9 FADD_d,d,d
 D8 D8 D7 FMUL_d,d,d
-3FF0000000000000 D9 d_const
+0000 0000 0000 3FF0 D9 d_const \ 0x3FF0000000000000
 D8 D8 D9 FADD_d,d,d
 D8 D8 D6 FMUL_d,d,d
-40071547652B82FE D9 d_const
+82FE 652B 1547 4007 D9 d_const \ 0x40071547652B82FE
 D8 D8 D9 FMUL_d,d,d
 D0 D1 D8 FADD_d,d,d
 X0 D0 FMOV_x,d
@@ -2532,54 +2634,54 @@ native _exp2
 D0 X0 FMOV_d,x
 D1 D0 FRINTM_d,d
 D2 D0 D1 FSUB_d,d,d
-3FE0000000000000 D3 d_const
+0000 0000 0000 3FE0 D3 d_const \ 0x3FE0000000000000
 D2 D2 D3 FSUB_d,d,d
-3FE62E42FEFA39EF D4 d_const
+39EF FEFA 2E42 3FE6 D4 d_const \ 0x3FE62E42FEFA39EF
 D2 D2 D4 FMUL_d,d,d
-3DA93974A8C07C9D D5 d_const
+7C9D A8C0 3974 3DA9 D5 d_const \ 0x3DA93974A8C07C9D
 D5 D5 D2 FMUL_d,d,d
-3DE6124613A86D09 D6 d_const
+6D09 13A8 1246 3DE6 D6 d_const \ 0x3DE6124613A86D09
 D5 D5 D6 FADD_d,d,d
 D5 D5 D2 FMUL_d,d,d
-3E21EED8EFF8D898 D6 d_const
+D898 EFF8 EED8 3E21 D6 d_const \ 0x3E21EED8EFF8D898
 D5 D5 D6 FADD_d,d,d
 D5 D5 D2 FMUL_d,d,d
-3E5AE64567F544E4 D6 d_const
+44E4 67F5 E645 3E5A D6 d_const \ 0x3E5AE64567F544E4
 D5 D5 D6 FADD_d,d,d
 D5 D5 D2 FMUL_d,d,d
-3E927E4FB7789F5C D6 d_const
+9F5C B778 7E4F 3E92 D6 d_const \ 0x3E927E4FB7789F5C
 D5 D5 D6 FADD_d,d,d
 D5 D5 D2 FMUL_d,d,d
-3EC71DE3A556C734 D6 d_const
+C734 A556 1DE3 3EC7 D6 d_const \ 0x3EC71DE3A556C734
 D5 D5 D6 FADD_d,d,d
 D5 D5 D2 FMUL_d,d,d
-3EFA01A01A01A01A D6 d_const
+A01A 1A01 01A0 3EFA D6 d_const \ 0x3EFA01A01A01A01A
 D5 D5 D6 FADD_d,d,d
 D5 D5 D2 FMUL_d,d,d
-3F2A01A01A01A01A D6 d_const
+A01A 1A01 01A0 3F2A D6 d_const \ 0x3F2A01A01A01A01A
 D5 D5 D6 FADD_d,d,d
 D5 D5 D2 FMUL_d,d,d
-3F56C16C16C16C17 D6 d_const
+6C17 16C1 C16C 3F56 D6 d_const \ 0x3F56C16C16C16C17
 D5 D5 D6 FADD_d,d,d
 D5 D5 D2 FMUL_d,d,d
-3F81111111111111 D6 d_const
+1111 1111 1111 3F81 D6 d_const \ 0x3F81111111111111
 D5 D5 D6 FADD_d,d,d
 D5 D5 D2 FMUL_d,d,d
-3FA5555555555555 D6 d_const
+5555 5555 5555 3FA5 D6 d_const \ 0x3FA5555555555555
 D5 D5 D6 FADD_d,d,d
 D5 D5 D2 FMUL_d,d,d
-3FC5555555555555 D6 d_const
+5555 5555 5555 3FC5 D6 d_const \ 0x3FC5555555555555
 D5 D5 D6 FADD_d,d,d
 D5 D5 D2 FMUL_d,d,d
-3FE0000000000000 D6 d_const
+0000 0000 0000 3FE0 D6 d_const \ 0x3FE0000000000000
 D5 D5 D6 FADD_d,d,d
 D5 D5 D2 FMUL_d,d,d
-3FF0000000000000 D6 d_const
+0000 0000 0000 3FF0 D6 d_const \ 0x3FF0000000000000
 D5 D5 D6 FADD_d,d,d
 D5 D5 D2 FMUL_d,d,d
-3FF0000000000000 D6 d_const
+0000 0000 0000 3FF0 D6 d_const \ 0x3FF0000000000000
 D5 D5 D6 FADD_d,d,d
-3FF6A09E667F3BCD D6 d_const
+3BCD 667F A09E 3FF6 D6 d_const \ 0x3FF6A09E667F3BCD
 D5 D5 D6 FMUL_d,d,d
 X1 D1 FCVTMS_x,d
 X1 X1 3FF add_rr,s
@@ -2596,7 +2698,7 @@ A rlabel_fs!
 X0 0 mov_rr,x
 ret
 B rlabel_fs!
-X0 7FF0000000000000 mov_rr,x
+X0 0000 0000 0000 7FF0 mov_rr,x4 \ 0x7FF0000000000000
 ret
 
 \ floating point power
@@ -2615,7 +2717,7 @@ ret
 \ halvening
 native fhalf
 D0 X0 FMOV_d,x
-3FE0000000000000 D1 d_const
+0000 0000 0000 3FE0 D1 d_const \ 0x3FE0000000000000
 D0 D0 D1 FMUL_d,d,d
 X0 D0 FMOV_x,d
 ret
@@ -2707,12 +2809,16 @@ here xcode_align_addr here - allot }
 
 {: literal
 xcode_align
-F9000260 d,
-91002273 d,
-dup FFFF and 5 lshift D2800000 or d,
-dup 10 rshift FFFF and 5 lshift F2A00000 or d,
-dup 20 rshift FFFF and 5 lshift F2C00000 or d,
-30 rshift FFFF and 5 lshift F2E00000 or d,
+0260 F900 x32,
+2273 9100 x32,
+dup FFFF and
+dup 5 lshift FFFF and swap B rshift D280 or x32,
+dup 10 rshift FFFF and
+dup 5 lshift FFFF and swap B rshift F2A0 or x32,
+dup 20 rshift FFFF and
+dup 5 lshift FFFF and swap B rshift F2C0 or x32,
+30 rshift FFFF and
+dup 5 lshift FFFF and swap B rshift F2E0 or x32,
 }
 
 alias fliteral literal
@@ -2733,10 +2839,16 @@ x' >lit does
 
 {: {{
 xcode_align
-here 10 + dup FFFF and 5 lshift 10 or D2800000 or d,
-10 rshift FFFF and 5 lshift 10 or F2A00000 or d,
-F81F8FB0 d,
-14000000 }~ d,
+here 10 +
+dup FFFF and 5 lshift 10 or
+over FFFF and B rshift D280 or
+x32,
+10 rshift FFFF and
+dup 5 lshift 10 or
+swap B rshift F2A0 or
+x32,
+8FB0 F81F x32,
+0 1400 }~ x32,
 
 \ Close a quotation. Its body lives inline in the code stream
 \ and may end with arbitrary-length data (e.g. a string
@@ -2745,12 +2857,13 @@ F81F8FB0 d,
 \ branch targets and displacements, are 4-byte units.
 {: }}
 xcode_align
-dup here swap - 4 + 2 rshift 3FFFFFF and 14000000 or swap 4 -
-dup xicache_mark
-d!
-F9000260 d,
-91002273 d,
-F84087A0 d,
+dup here swap - 4 + 2 rshift
+swap 4 - >r
+dup FFFF and swap drop
+1400 r> x32!
+0260 F900 x32,
+2273 9100 x32,
+87A0 F840 x32,
 }
 
 \ self references
@@ -2759,7 +2872,10 @@ F84087A0 d,
 native }~self
 2 label jmp \ not permitted in interpret mode
 
-{ drop dup here - 2 rshift 3FFFFFF and 14000000 or d, }~fail
+{ drop dup here - 2 rshift
+  dup FFFF and
+  swap 10 rshift 3FF and 1400 or
+  x32, drop }~fail
 
 does
 
@@ -3144,22 +3260,29 @@ ret, }
 \ create effect with default handler
 {: effect ( x -( heap )- )
 create redefine
-58000070 d, F9400210 d, D61F0200 d,
+0070 5800 x32, 0210 F940 x32, 0200 D61F x32,
 here 8 + ,
 }~ ,
 
 \ create exception
 {: exception ( x -( heap )- )
 create redefine
-1F000 @
-dup 8 + 1F000 !
+F000 1 10 lshift or @	\ 0x1F000
+dup 8 + F000 1 10 lshift or !
 dup
 [ bye_handler @ xliteral ]
 swap !
-dup FFFF and 5 lshift D2800003 or d,	\ movz x3, slot_low
-10 rshift FFFF and 5 lshift F2A00003 or d,	\ movk x3, slot_high
-[ raise @ 10000 + xliteral ]
-dup here - 2 rshift 3FFFFFF and 14000000 or d, drop
+dup FFFF and 5 lshift 3 or FFFF and
+over FFFF and 11 rshift D280 or
+x32,			\ movz x3, slot_low
+dup 10 rshift FFFF and 5 lshift 3 or FFFF and
+over 1B rshift F2A0 or
+x32,			\ movk x3, slot_high
+[ raise @ xaliteral ]
+dup here - 2 rshift
+dup FFFF and
+swap 10 rshift 3FF and 1400 or
+x32, drop
 drop
 }
 
@@ -3439,7 +3562,7 @@ x' cr jmp
 \ the entry point is here; X20 keeps the process stack pointer
 7 rlabel_f! \ the dictionary is ready here
 7 label!
-910003FD d, \ X29 = SP; SP stays 16-byte aligned
+03FD 9100 x32, \ 0x910003FD; X29 = SP, SP stays aligned
 
 X20 mov_from_sp
 
@@ -3484,16 +3607,16 @@ X3 x' stderrok mov_rr,aa
 EFFECTS 20 + X3 mov_[aa],rr
 
 \ initialize the user-defined exception slots
-X16 1A200 mov_rr,x
-X17 1F000 mov_rr,x
+X16 A200 mov_rr,aa
+X17 F000 mov_rr,aa
 X3 x' bye mov_rr,aa
 E label!
 X16 X3 mov_[rr],rr
 X16 xcell add_rr,s
 X16 X17 cmp_rr,rr
 E label jb
-X16 1F000 mov_rr,x
-X3 1A200 mov_rr,x
+X16 F000 mov_rr,aa
+X3 A200 mov_rr,aa
 X16 X3 mov_[rr],rr
 
 \ check arguments; X20 points at argc/argv
