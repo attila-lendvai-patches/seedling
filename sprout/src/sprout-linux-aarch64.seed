@@ -3377,7 +3377,8 @@ dup 1+ swap }~ c@
   { FFFF <= dup C rshift E0 or emit dup 
     6 rshift _u8emit }~ _u8emit
 }~|
-{ 10FFFF <= dup 12 rshift F0 or emit dup
+\ 4-byte UTF-8 is valid up to 10FFFF: c >> 16 <= 10.
+{ dup 10 rshift 10 <= drop dup 12 rshift F0 or emit dup
   C rshift _u8emit dup 6 rshift _u8emit }~ _u8emit
 }~|
 
