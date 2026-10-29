@@ -646,13 +646,28 @@ host_suite_full() {
     cmp --verbose "$BUILD/seed-aarch64" \
         "$BUILD/seed-aarch64.by-i386-sprout"
 
+    # (i386) Seed and Sprout compile the aarch64 Sprout
+    if [ ! -f "$BUILD/sprout-aarch64" ] ||
+       [ "$ROOT/sprout/src/sprout-linux-aarch64.seed" -nt "$BUILD/sprout-aarch64" ]; then
+        seed_run "$BOOTSTRAP" \
+            "$ROOT/sprout/src/sprout-linux-aarch64.seed" "$BUILD/sprout-aarch64"
+    fi
+    seed_run "$BUILD/seed-i386.2" \
+        "$ROOT/sprout/src/sprout-linux-aarch64.seed" \
+        "$BUILD/sprout-aarch64.by-i386"
+    cmp --verbose "$BUILD/sprout-aarch64" "$BUILD/sprout-aarch64.by-i386"
+    seed_run "$BUILD/sprout-i386.2" \
+        "$ROOT/sprout/src/sprout-linux-aarch64.seed" \
+        "$BUILD/sprout-aarch64.by-i386-sprout"
+    cmp --verbose "$BUILD/sprout-aarch64" \
+        "$BUILD/sprout-aarch64.by-i386-sprout"
+
     elf_check
 }
 
-# The i386 host can compile the 16-bit-safe aarch64 Seed, but not the
-# aarch64 Sprout: its floating-point constants are 64-bit and do not
-# fit the i386 host's cells. This suite covers the i386 Seed and
-# Sprout, the aarch64 Seed, and the amd64/i386 cross-checks.
+# The i386 host could not compile the aarch64 Sprout while its
+# floating-point constants needed more than the host's cells. It now
+# compiles the 16-bit-safe aarch64 Seed and Sprout.
 
 i386_suite() {
     suite_capabilities

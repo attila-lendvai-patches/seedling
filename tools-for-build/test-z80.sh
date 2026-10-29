@@ -37,21 +37,50 @@ echo "    z80 simulator: $(rel "$Z80SIM")"
 seed_run "$BOOTSTRAP" "$ROOT/seed/src/seed-z80-fictional.seed" "$BUILD/seed.z80"
 runtime_suite "$BUILD/seed.z80" seed-z80
 
-seed_run "$BOOTSTRAP" "$ROOT/seed/src/seed-linux-amd64.seed" "$BUILD/ref.amd64"
-seed_run "$BOOTSTRAP" "$ROOT/seed/src/seed-linux-i386.seed" "$BUILD/ref.i386"
-seed_run "$BOOTSTRAP" "$ROOT/seed/src/seed-linux-aarch64.seed" "$BUILD/ref.aarch64"
-
+# The committed Seed binaries are the cross-compiled references. The
+# committed_binary_check at the start of the suite proves that each of
+# them is a fixpoint of its source.
 # (z80) Seed cross-compiles to amd64
 z80_run "$BUILD/seed.z80" "$ROOT/seed/src/seed-linux-amd64.seed" "$BUILD/seed.z80-amd64"
-cmp --verbose "$BUILD/ref.amd64" "$BUILD/seed.z80-amd64"
+cmp --verbose "$ROOT/seed/bin/seed-linux-amd64" "$BUILD/seed.z80-amd64"
 
 # (z80) Seed cross-compiles to i386
 z80_run "$BUILD/seed.z80" "$ROOT/seed/src/seed-linux-i386.seed" "$BUILD/seed.i386.by-z80"
-cmp --verbose "$BUILD/ref.i386" "$BUILD/seed.i386.by-z80"
+cmp --verbose "$ROOT/seed/bin/seed-linux-i386" "$BUILD/seed.i386.by-z80"
 
 # (z80) Seed cross-compiles to aarch64
 z80_run "$BUILD/seed.z80" "$ROOT/seed/src/seed-linux-aarch64.seed" "$BUILD/seed-aarch64.by-z80"
-cmp --verbose "$BUILD/ref.aarch64" "$BUILD/seed-aarch64.by-z80"
+cmp --verbose "$ROOT/seed/bin/seed-linux-aarch64" "$BUILD/seed-aarch64.by-z80"
+
+# Sprout references come from the host suite when it has already built
+# them; build only what is missing or stale.
+sprout_ref() {
+    local ref=$1 src=$2
+    if [ ! -f "$ref" ] || [ "$src" -nt "$ref" ]; then
+        seed_run "$BOOTSTRAP" "$src" "$ref"
+    fi
+}
+
+sprout_ref "$BUILD/sprout" "$ROOT/sprout/src/sprout-linux-amd64.seed"
+sprout_ref "$BUILD/sprout-i386" "$ROOT/sprout/src/sprout-linux-i386.seed"
+sprout_ref "$BUILD/sprout-aarch64" "$ROOT/sprout/src/sprout-linux-aarch64.seed"
+sprout_ref "$BUILD/sprout-z80" "$ROOT/sprout/src/sprout-z80-fictional.seed"
+
+# (z80) Seed cross-compiles the amd64 Sprout
+z80_run "$BUILD/seed.z80" "$ROOT/sprout/src/sprout-linux-amd64.seed" "$BUILD/sprout-amd64.by-z80"
+cmp --verbose "$BUILD/sprout" "$BUILD/sprout-amd64.by-z80"
+
+# (z80) Seed cross-compiles the i386 Sprout
+z80_run "$BUILD/seed.z80" "$ROOT/sprout/src/sprout-linux-i386.seed" "$BUILD/sprout-i386.by-z80"
+cmp --verbose "$BUILD/sprout-i386" "$BUILD/sprout-i386.by-z80"
+
+# (z80) Seed cross-compiles the aarch64 Sprout
+z80_run "$BUILD/seed.z80" "$ROOT/sprout/src/sprout-linux-aarch64.seed" "$BUILD/sprout-aarch64.by-z80"
+cmp --verbose "$BUILD/sprout-aarch64" "$BUILD/sprout-aarch64.by-z80"
+
+# (z80) Seed cross-compiles the z80 Sprout
+z80_run "$BUILD/seed.z80" "$ROOT/sprout/src/sprout-z80-fictional.seed" "$BUILD/sprout-z80.by-z80"
+cmp --verbose "$BUILD/sprout-z80" "$BUILD/sprout-z80.by-z80"
 
 # (z80) Seed bootstraps itself
 z80_run "$BUILD/seed.z80" "$ROOT/seed/src/seed-z80-fictional.seed" "$BUILD/seed.z80.1"
