@@ -491,12 +491,12 @@ xcell+ dup constant ERR_SP
 xcell+ dup constant SEED
 xcell+ dup constant BASE
 1+     dup constant PAD
-  20 constant PAD_LEN
-PAD_LEN + constant DICTIONARY
+        20 constant PAD_LEN
+PAD_LEN +  constant DICTIONARY
 
-\ memory layout
+\ the heap is up until the stack
 E000 constant STK_BOT
-FF00 constant STK_TOP
+FF00 constant STK_TOP \ 1F00 bytes for the return stack
 
 \ labels
 7 constant start

@@ -13,14 +13,14 @@ amd64; it is finished when the smallest practical host can produce it.
 
 Consequences for every source and change:
 
-* Keep the z80 bootstrap paths working. The z80 Seed compiles amd64, i386,
-  and itself. `z80 -> aarch64` is the known gap: the aarch64 sources still
-  need values wider than 16 bits (e.g. the `10000` image base / 0x10000).
-  Close that gap; do not widen it.
-* Do not introduce constants, addresses, or intermediate values that need
-  more than 16 bits unless the source is explicitly not z80-compilable.
-  Emit wide target values from 16-bit-safe pieces. Use `ximage_base_hi` and
-  the `a,` / `label_f` helpers rather than a full target address literal.
+* Keep the z80 bootstrap paths working. The z80 Seed compiles amd64,
+  i386, aarch64, and itself, and all four Sprout sources. The source
+  must work when the host cell is exactly 16 bits.
+* Do not assume the host cell is wider than 16 bits. A literal wider
+  than 16 bits is fine when it is truncated before use; see Pitfalls.
+  Emit wide target values from 16-bit-safe pieces. Use `ximage_base_hi`
+  and the `a,` / `label_f` helpers rather than a full target address
+  literal.
 * Describe the *target* geometry per port. Never derive it from the
   compiling host.
 * Cross-compilation must be exact: any Seed or Sprout compiling the same
@@ -228,6 +228,28 @@ ELF code.
 * Use one space after a sentence-ending period, never two: in
   documentation, code comments, and commit messages. Spacing used to
   align columns in code or comment tables is layout, not prose.
+
+## Pitfalls
+
+### Literals and integer width
+
+A literal wider than 16 bits will appear in the sources, and a 16-bit
+host will silently truncate it. That is acceptable when the code
+truncates it before use: `18000` is fine as the low 16 bits of a target
+base because the consumer masks it. It is a bug when arithmetic, a
+comparison, or control flow depends on the discarded high bits:
+`10FFFF` in a comparison changed the UTF-8 branch after truncation.
+
+The source literal check lists such literals for review, but does not
+fail and does not ask for them to be split. Forcing every wide literal
+into 16-bit pieces would hurt readability more than it helps.
+
+### The z80 heap and stack share the address space
+
+The z80 Seed heap grows up toward the data stack. A target image that
+crosses `STK_BOT` corrupts the compiler stack and the last words it
+emits. Keep the largest image below `STK_BOT`; the aarch64 Sprout
+needed the limit raised to `E000`.
 
 ## Git
 
