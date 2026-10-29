@@ -134,9 +134,11 @@ The z80 uses a different, threaded layout; keep its `xword_name` and
 
 ## 16-bit-cell rules
 
-The host may have 16-bit cells. The target may have wider cells. Every
-value that the host holds while *emitting* a target instruction must
-fit in 16 bits.
+The host may have 16-bit cells. The target may have wider cells. A
+value the host holds while *emitting* a target instruction must be
+truncated to 16 bits before it affects emitted bytes. A literal wider
+than 16 bits is fine when the code truncates it before use; do not rely
+on a wide host value for arithmetic, comparisons, or control flow.
 
 ### Emit wide values in halves
 
@@ -379,8 +381,11 @@ rm -rf tools-for-build/build && bash tools-for-build/test.sh
 
 ## Pitfalls
 
-- A host literal wider than 16 bits, or a 32-bit intermediate that
-  overflows before it is split.
+- A host literal wider than 16 bits used for arithmetic, a comparison,
+  or control flow instead of being truncated first.
+- A wide source literal listed by the yellow literal check: review it,
+  but do not split it merely to silence the check.
+- A 32-bit intermediate that overflows before it is split.
 - `x32,` argument order: high half on top.
 - An `immr`/`imm12`/`imm26` field that extends past bit 15.
 - A target word used before it is defined in the target vocabulary.
@@ -396,6 +401,8 @@ rm -rf tools-for-build/build && bash tools-for-build/test.sh
 ## Checklist
 
 - [ ] source builds with the amd64 Seed and with the 16-bit z80 Seed;
+- [ ] wide source literals are truncated before they affect emitted
+      bytes;
 - [ ] two-generation self-host fixpoint;
 - [ ] cross-compiles identically from every capable Seed/Sprout;
 - [ ] z80 -> new port matches the amd64-built image;
