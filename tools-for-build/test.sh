@@ -51,6 +51,7 @@ echo "==> host architecture: $host"
 BOOTSTRAP=$(bootstrap_for_host)
 
 run source_line_check
+run source_literal_check
 run committed_binary_check
 export TEST_CHECKS_DONE=1
 
