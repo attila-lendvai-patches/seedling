@@ -499,7 +499,7 @@ xcell+ dup constant BASE
 PAD_LEN + constant DICTIONARY
 
 \ memory layout
-C000 constant STK_BOT
+E000 constant STK_BOT
 FF00 constant STK_TOP
 
 \ labels
