@@ -72,6 +72,7 @@ hex
 \
 \ xword_comp is the compile-behavior field offset.
 \ xname_from_token is the name offset from the token cell.
+\ xinst_size is the width of a target instruction word.
 \ xcall_size is the size of the stack-call sequence.
 \ xquote_open_size is the size of the quotation opener emitted
 \ by x{{.
@@ -86,6 +87,7 @@ xcell1- invert constant xcell_mask      \ FFF8
 {: xcell+  xcell + }
 
 4 constant xcode_align_bytes
+4 constant xinst_size
 xcell 2 * constant xword_comp
 xcell 2 * constant xname_from_token
 10 constant xcall_size
@@ -994,7 +996,7 @@ xcreate
 \ postpone colon definition
 {: postpone
 native
-0 w, 1400 w,
+0 w, 1400 w, \ B .+0, patched later
 }
 
 \ effect definition
@@ -1295,7 +1297,7 @@ ret
 
 native callcomp
 $ callcomp !
-X3 4 mov_rr,x
+X3 xinst_size mov_rr,x
 1 lb call
 X3 DP mov_rr,[aa]
 X16 70 mov_rr,x
@@ -1303,7 +1305,7 @@ X16 1000 MOVK_r,u16,          \ 0x10000070
 X3 X16 mov_[rr],er
 X3 4 add_rr,s
 DP X3 mov_[aa],rr
-X3 4 mov_rr,x
+X3 xinst_size mov_rr,x
 1 lb call
 X3 DP mov_rr,[aa]
 X16 8FB0 mov_rr,x
@@ -1311,7 +1313,7 @@ X16 F81F MOVK_r,u16,          \ 0xf81f8fb0
 X3 X16 mov_[rr],er
 X3 4 add_rr,s
 DP X3 mov_[aa],rr
-X3 4 mov_rr,x
+X3 xinst_size mov_rr,x
 1 lb call
 X3 DP mov_rr,[aa]
 x' xcall_check_range call
@@ -1333,7 +1335,7 @@ ret
 x' callcomp does
 
 native tailcomp
-X3 4 mov_rr,x
+X3 xinst_size mov_rr,x
 1 lb call
 X3 DP mov_rr,[aa]
 x' xcall_check_range call
