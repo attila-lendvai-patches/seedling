@@ -53,6 +53,9 @@ hex
 \ Absolute addresses are 0001xxxx (image base 10000).
 \ xword_comp is the compile-behavior field offset.
 \ xname_from_token is the name offset from the token cell.
+\ xliteral_size and xret_size are the lengths emitted by
+\ literal and ret,; xstub_size is their sum, the payload
+\ of create.
 \ xcall_size is the length of a call instruction; the
 \ quotation opener x{{ has the same length.
 \ xjump_size is the length of a forward jump placeholder.
@@ -71,6 +74,9 @@ xcell 2 * constant xword_comp
 xcell 2 * constant xname_from_token
 5 constant xcall_size
 5 constant xjump_size
+11 constant xliteral_size
+1 constant xret_size
+xliteral_size xret_size + constant xstub_size
 4 constant xrel_size
 
 \ Auxiliary functions for the Assembler
@@ -2349,8 +2355,8 @@ current @ !
 here cell+ cell+ pad length + 1+ ,
 ' callcomp ,
 pad s, 0 c,
-\ payload = code + literal(11) + ret(1)
-here 12 +
+\ payload = code + xliteral_size + xret_size
+here [ xstub_size xliteral ] +
 literal
 ret, }
 

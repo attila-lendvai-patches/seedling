@@ -74,6 +74,9 @@ hex
 \
 \ xword_comp is the compile-behavior field offset.
 \ xname_from_token is the name offset from the token cell.
+\ xliteral_size and xret_size are the lengths emitted by
+\ literal and ret,; xstub_size is their sum, the payload
+\ of create.
 \ xinst_size is the width of a target instruction word.
 \ xcall_size is the size of the stack-call sequence.
 \ xquote_open_size is the size of the quotation opener emitted
@@ -94,6 +97,9 @@ xcell 2 * constant xword_comp
 xcell 2 * constant xname_from_token
 10 constant xcall_size
 10 constant xquote_open_size
+18 constant xliteral_size
+8 constant xret_size
+xliteral_size xret_size + constant xstub_size
 4 constant xrel_size
 
 \ Auxiliary functions for the Assembler
@@ -3237,8 +3243,8 @@ here cell+ cell+ pad length + 1+ ,
 pad s, 0 c,
 xcode_align
 here last 8 + !
-\ payload = code + literal(18) + ret(8)
-here 20 +
+\ payload = code + xliteral_size + xret_size
+here [ xstub_size xliteral ] +
 literal
 ret, }
 
