@@ -30,6 +30,44 @@ hex
 \ a 16-bit Seed must be able to build this source.
 1 constant ximage_base_hi
 
+\ [port] TARGET GEOMETRY
+\ Values describe the target, not the compiling Seed. Offsets
+\ are in target bytes; the host may have a different cell size.
+\
+\   xcell_bits  target cell size in bits
+\   xcelllog    log2(xcell); used by xcells
+\   xcell       target cell size in bytes
+\   xcell1-     xcell - 1
+\   xcell_mask  align-up mask
+\   xcells      ( n -- n*xcell )
+\   xalign      ( a -- a' ) align address up to a cell
+\   xcell+      ( a -- a+xcell )
+\
+\ Word entry layout (entry = link cell; 'current' points here):
+\   +0              link
+\   +xcell          token / xt (code address)
+\   +2 cells        compile-mode behavior
+\   +3 cells        zero-terminated name
+\   code ...        no instruction alignment on x86
+\
+\ Absolute addresses are 0001xxxx (image base 10000).
+\ xword_comp is the compile-behavior field offset.
+\ xname_from_token is the name offset from the token cell.
+\ xrel_size is the width of a relative branch
+\ displacement field.
+40 constant xcell_bits          \ 64 bits
+3  constant xcelllog            \ for shifts
+xcell_bits 3 rshift constant xcell
+xcell 1 - constant xcell1-      \ 7
+xcell1- invert constant xcell_mask      \ FFF8
+{: xcells  xcelllog lshift }
+{: xalign  xcell1- + xcell_mask and }
+{: xcell+  xcell + }
+
+xcell 2 * constant xword_comp
+xcell 2 * constant xname_from_token
+4 constant xrel_size
+
 \ Auxiliary functions for the Assembler
 
 \ execute n times
@@ -274,44 +312,6 @@ op_syscall
 \ an association list.
 
 \ assembler macros
-
-\ [port] TARGET GEOMETRY
-\ Values describe the target, not the compiling Seed. Offsets
-\ are in target bytes; the host may have a different cell size.
-\
-\   xcell_bits  target cell size in bits
-\   xcelllog    log2(xcell); used by xcells
-\   xcell       target cell size in bytes
-\   xcell1-     xcell - 1
-\   xcell_mask  align-up mask
-\   xcells      ( n -- n*xcell )
-\   xalign      ( a -- a' ) align address up to a cell
-\   xcell+      ( a -- a+xcell )
-\
-\ Word entry layout (entry = link cell; 'current' points here):
-\   +0              link
-\   +xcell          token / xt (code address)
-\   +2 cells        compile-mode behavior
-\   +3 cells        zero-terminated name
-\   code ...        no instruction alignment on x86
-\
-\ Absolute addresses are 0001xxxx (image base 10000).
-\ xword_comp is the compile-behavior field offset.
-\ xname_from_token is the name offset from the token cell.
-\ xrel_size is the width of a relative branch
-\ displacement field.
-40 constant xcell_bits          \ 64 bits
-3  constant xcelllog            \ for shifts
-xcell_bits 3 rshift constant xcell
-xcell 1 - constant xcell1-      \ 7
-xcell1- invert constant xcell_mask      \ FFF8
-{: xcells  xcelllog lshift }
-{: xalign  xcell1- + xcell_mask and }
-{: xcell+  xcell + }
-
-xcell 2 * constant xword_comp
-xcell 2 * constant xname_from_token
-4 constant xrel_size
 
 {: tos_load             \ top of data stack -> rax
 rbx xcell sub_rr,s
