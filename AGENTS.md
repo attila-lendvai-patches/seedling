@@ -266,11 +266,23 @@ its first word after the area prefix, and do not end it with a period.
 Separate it from the body with one blank line and hard-wrap the body at
 72 columns.
 
-Use `housekeeping:` when a commit changes no behavior: comments, prose,
-formatting, or anything else that cannot alter emitted bytes. It means
-the commit is safe to ignore when bisecting or looking for a bug, and
-it promises that every test and byte-for-byte comparison is unchanged.
-A change that can alter output is never housekeeping.
+Use `housekeeping:` when a commit changes no behavior and is trivial
+to review: comments, prose, formatting, or a pure move of a
+self-contained block that provably cannot alter behavior. It means the
+commit is safe to ignore when bisecting or looking for a bug, and it
+promises that every test and byte-for-byte comparison is unchanged. A
+change that can alter output is never housekeeping.
+
+Byte-identical output is necessary but not sufficient. A non-trivial
+code change that happens to leave the emitted bytes unchanged is still
+a code change: use the area prefix (`seed:`, `sprout:`, `aarch64:`,
+...) and say in the body what was compared. Introducing named
+constants, rewriting an emitter in terms of compile-time machinery, or
+changing a definition's implementation are code changes, not
+housekeeping. A move that changes which definition is visible at a use
+site, or that requires reasoning about lookup order, is not a pure
+move. A reviewer must be able to skip a housekeeping commit without
+reasoning about semantics.
 
 Use `doc:` when a commit adds or rewrites documentation.
 
