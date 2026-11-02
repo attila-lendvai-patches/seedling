@@ -58,7 +58,14 @@ target, not for the host:
 xcell_bits  xcelllog  xcell  xcell1-  xcell_mask
 xcells  xalign  xcell+
 xcode_align_bytes     \ only where instructions need alignment
-xcall_size  xquote_open_size  xrel_size
+xinst_size            \ one target instruction word
+xcall_size            \ host/xcompile call site
+xquote_open_size      \ host quotation opener
+xjump_size            \ forward jump placeholder, where it differs
+xliteral_size         \ bytes emitted by the target literal
+xret_size             \ bytes emitted by ret,
+xstub_size            \ xliteral_size xret_size +, the create payload
+xrel_size
 xword_comp  xname_from_token
 ```
 
@@ -75,16 +82,44 @@ xcell1- invert constant xcell_mask
 {: xcell+  xcell + }
 
 4 constant xcode_align_bytes
+4 constant xinst_size
 xcell 2 * constant xword_comp
 xcell 2 * constant xname_from_token
 10 constant xcall_size
 10 constant xquote_open_size
+18 constant xliteral_size
+8 constant xret_size
+xliteral_size xret_size + constant xstub_size
 4 constant xrel_size
 ```
 
 `xcell` is the target cell size in bytes. `xalign` aligns an address
 to a target cell. `xcode_align_bytes` is the *instruction* boundary,
 which may be different from the cell size.
+
+### Compile-time substitution
+
+Target code cannot read a host constant directly: a bare name is
+compiled as a target call. Put the host constant in brackets to
+evaluate it while compiling and emit it as a target literal:
+
+```forth
+here [ xstub_size xliteral ] +
+```
+
+The bracket runs at compile time and `xliteral` emits the same bytes as
+a numeric literal. The image does not grow, and the source names the
+invariant instead of repeating a number. Prefer this to a target-side
+constant word, which would add a runtime dictionary entry and image
+bytes.
+
+`[` is a target word and must be defined before the words that use it.
+The interpreter is therefore defined before `create`. The quotation
+emitters `{{` and `}}` still precede `[`, so their size literals stay
+numeric with a comment naming `xquote_open_size` or `xrel_size`. Do not
+move the interpreter above the quotations: it uses `"`, which uses
+`quotate`, which uses `{{`; moving the target number parser that far
+also shadows the host parser used for literals.
 
 ### Code alignment
 
