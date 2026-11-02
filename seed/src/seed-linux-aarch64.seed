@@ -2256,6 +2256,43 @@ SEED address current
 {: last
 current }~ @
 
+\ I/O functions
+
+{: s.
+dup length write }~ drop
+
+\ emit new line (a.k.a. carriage return)
+{: cr
+A }~ emit
+
+\ emit space
+{: space
+bl }~ emit
+
+\ emit all context words
+{: words
+{ current traverse& cell+ cell+ s. space }~fail
+' cr }~|
+
+\ interpreter functions
+
+\ interpreter
+{: interpret
+word
+{ find drop { cut }~fail }~|
+{ { pad }~ s>number { pad s. "  undefined" s. bye }~ cr }~|
+| }~self
+
+\ unnamed macro
+
+{: [ ' interpret 'id}~|
+
+x' execute does
+
+{: ] }~fail
+
+x' }~fail does   \  TODO: not allowed in compile mode
+
 \ create new word returning the payload address
 {: create
 word
@@ -2338,43 +2375,6 @@ last cell+ cell+ }~ !
 \ make most recently definted word immediate
 {: immediate ( -( heap )- )
 ' execute }~ does
-
-\ I/O functions
-
-{: s.
-dup length write }~ drop
-
-\ emit new line (a.k.a. carriage return)
-{: cr
-A }~ emit
-
-\ emit space
-{: space
-bl }~ emit
-
-\ emit all context words
-{: words
-{ current traverse& cell+ cell+ s. space }~fail
-' cr }~| 
-
-\ interpreter functions
-
-\ interpreter
-{: interpret
-word
-{ find drop { cut }~fail }~|
-{ { pad }~ s>number { pad s. "  undefined" s. bye }~ cr }~|
-| }~self
-
-\ unnamed macro
-
-{: [ ' interpret 'id}~|
-
-x' execute does
-
-{: ] }~fail
-
-x' }~fail does   \  TODO: not allowed in compile mode
 
 \ numeral functions
 
