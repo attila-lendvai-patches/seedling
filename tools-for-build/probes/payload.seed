@@ -1,0 +1,14 @@
+output
+hex
+1 variable a
+22 variable bb
+333 variable ccc
+4444 variable dddd
+a @ . cr
+bb @ . cr
+ccc @ . cr
+dddd @ . cr
+55 create odd ,
+odd @ . cr
+{ " odd" s. } execute cr
+bye

@@ -230,6 +230,7 @@ probe_expected() {
         macro.seed) echo 5 ;;
         self.seed) echo 321 ;;
         variable.seed) echo 7 ;;
+        payload.seed) echo 122333444455odd ;;
         string.seed) echo hi ;;
         base.seed) echo 41255 ;;
         *) echo "" ;;
