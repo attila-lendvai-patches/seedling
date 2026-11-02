@@ -1037,6 +1037,7 @@ sys.mprotect syscall
 rax pop
 ret
 
+\ runtime call site: E8 rel32 is xcall_size bytes
 native callcomp
 $ callcomp !
 rcx xcall_size mov_rr,x
@@ -1055,6 +1056,7 @@ ret
 
 x' callcomp does
 
+\ runtime jump site: E9 rel32 is xjump_size bytes
 native tailcomp
 rcx xjump_size mov_rr,x
 1 label call
@@ -1067,6 +1069,11 @@ $ endcomp !
 x' tailcomp call
 2 jmp_f
 
+\ Failure frame, from ERR_SP up:
+\   +0  handler pointer
+\   +1  previous handler address
+\   +2  previous ERR_SP
+\   +3  saved data stack pointer
 native }~fail
 2 rlabel_f!
 2 label!
@@ -1546,6 +1553,8 @@ ERR_SP rdx mov_[aa],rr	\ restore previous ERR_SP
 rcx jmp_rr		\ continue with finally
 
 \ handle effect
+\ Run a computation under an effect handler; push the
+\ frame described at }~fail and restore it on return.
 native handle
 binary			\ effect reference in rcx
 rcx 3 add_rr,s
@@ -1634,6 +1643,8 @@ alias 'id}~| 'id|
 x' endcomp does
 
 \ cut handler
+\ Discard the current handler frame and restore the
+\ previous handler and ERR_SP.
 native cut
 rdi ERR_SP mov_rr,[aa]
 rcx rdi mov_rr,[rr]	\ handler ptr in rcx
@@ -1646,6 +1657,7 @@ ERR_SP rcx mov_[aa],rr	\ restore previous ERR_SP
 ret
 
 \ pend
+\ Install a failure frame for the computation that follows.
 native &
 rsi pop			\ return address in rsi
 binary			\ failure handler in rcx
@@ -1982,9 +1994,11 @@ postpone undef
 
 x' >lit does
 
+\ E8 + rel32: xquote_open_size
 {: {{
 E8 c, 0 }~ d,
 
+\ xrel_size: rel32 field
 {: }}
 dup here swap - swap 4 - d!
 48 c, 89 c, 03 c,
@@ -2237,11 +2251,13 @@ drop }~ drop
 
 \ list extension
 {: link
+\ align here up to a cell boundary
 here 7 + 7 and 7 xor allot
 here swap }~ ,
 
 \ list traversal
 {: traverse&
+\ yields the previous entry's token cell
 @ 0<> 'self & dup }~ cell+
 
 \ vocabulary in which words are searched
@@ -2315,6 +2331,7 @@ swap }~ reader
 
 \ emit all non-auxiliary context words
 {: words
+\ name = token + xname_from_token
 { context @ traverse& cell+ cell+
 dup c@ ascii _ <> drop
 s. space }~fail
@@ -2352,6 +2369,7 @@ word
 last
 link
 current @ !
+\ name follows the token and compile cells
 here cell+ cell+ pad length + 1+ ,
 ' callcomp ,
 pad s, 0 c,
@@ -2367,6 +2385,7 @@ create }~ ,
 \ redefine last word
 {: redefine
 last
+\ name = entry + xword_name
 cell+ cell+ cell+ skipstr
 dp }~ !
 
@@ -2379,7 +2398,7 @@ ret, }
 \ create effect with default handler
 {: effect ( x -( heap )- )
 create redefine
-here 7 +		\ instruction length, 3 + 4
+here 7 +		\ skip jmp [addr] to the handler cell
 FF c, 24 c, 25 c, d,	\ jmp [address]
 }~ ,
 
@@ -2405,11 +2424,13 @@ create redefine
 'id tailcomp }
 
 \ search vocabulary
+\ traverse& yields the token cell; name = token + 2 cells
 {: search ( a -( pad fail )- a )
 traverse& cell+ cell+ pad s= cut cell- cell- }~ nip
 
 \ find word in context vocabulary
 {:: find ( -( pad fail )- a )
+\ the cell after the token is the compile behavior
 context @ search dup @ swap cell+ }~ @
 
 \ create colon definition
@@ -2432,6 +2453,7 @@ here ' compile 'id|
 
 \ change compile mode behavior
 {: does ( x -( heap )- )
+\ compile-mode cell = xword_comp
 last cell+ cell+ }~ !
 
 \ make most recently definted word immediate

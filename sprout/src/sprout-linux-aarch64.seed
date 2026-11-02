@@ -675,6 +675,7 @@ F constant X15
 {: jmp_s ( addr -- ) B. }
 {: jmp_f ( label -- ) B._f }
 {: jmp_rr ( reg -- ) 5 lshift D61F x32, }
+\ load the absolute address and branch to it
 {: jmp_[aa] ( addr -- )
   0070 5800 x32, 0210 F940 x32, 0200 D61F x32, a,
 }
@@ -1600,6 +1601,8 @@ X16 X17 cmp_rr,rr
 x' xcall_overflow ja
 ret
 
+\ Runtime call site: adr; str; B, three instructions.
+\ The host call site is xcall_size bytes; this form is smaller.
 native callcomp
 $ callcomp !
 X3 xinst_size mov_rr,x
@@ -1639,6 +1642,7 @@ ret
 
 x' callcomp does
 
+\ Runtime jump site: one B instruction (xinst_size).
 native tailcomp
 X3 xinst_size mov_rr,x
 1 label call
@@ -1717,6 +1721,11 @@ rsi pop
 rax pop
 ret
 
+\ Failure frame, from ERR_SP up:
+\   +0  handler pointer
+\   +1  previous handler address
+\   +2  previous ERR_SP
+\   +3  saved data stack pointer
 native }~fail
 2 rlabel_f!
 2 label!
@@ -2181,6 +2190,8 @@ x' xicache_sync call
 rcx jmp_rr		\ continue with finally
 
 \ handle effect
+\ Run a computation under an effect handler; push the
+\ frame described at }~fail and restore it on return.
 native handle
 binary			\ effect reference in rcx
 rcx C add_rr,s
@@ -2279,6 +2290,8 @@ alias 'id}~| 'id|
 x' endcomp does
 
 \ cut handler
+\ Discard the current handler frame and restore the
+\ previous handler and ERR_SP.
 native cut
 rdi ERR_SP mov_rr,[aa]
 rcx rdi mov_rr,[rr]	\ handler ptr in rcx
@@ -2291,6 +2304,7 @@ ERR_SP rcx mov_[aa],rr	\ restore previous ERR_SP
 ret
 
 \ pend
+\ Install a failure frame for the computation that follows.
 native &
 rsi pop			\ return address in rsi
 binary			\ failure handler in rcx
@@ -2845,6 +2859,7 @@ postpone undef
 
 x' >lit does
 
+\ xquote_open_size: four instruction words
 {: {{
 xcode_align
 here 10 +
@@ -2863,6 +2878,8 @@ x32,
 \ literal), so align to 4 bytes before patching the branch and
 \ emitting the continuation: AArch64 instructions, and thus
 \ branch targets and displacements, are 4-byte units.
+\ offset in words: (here - token + xrel_size) / 4
+\ patch the B at token - xrel_size
 {: }}
 xcode_align
 dup here swap - 4 + 2 rshift
@@ -3123,11 +3140,13 @@ drop }~ drop
 
 \ list extension
 {: link
+\ align here up to a cell boundary
 here 7 + 7 and 7 xor allot
 here swap }~ ,
 
 \ list traversal
 {: traverse&
+\ yields the previous entry's token cell
 @ 0<> 'self & dup }~ cell+
 
 \ vocabulary in which words are searched
@@ -3201,6 +3220,7 @@ swap }~ reader
 
 \ emit all non-auxiliary context words
 {: words
+\ name = token + xname_from_token
 { context @ traverse& cell+ cell+
 dup c@ ascii _ <> drop
 s. space }~fail
@@ -3238,10 +3258,12 @@ word
 last
 link
 current @ !
+\ name follows the token and compile cells
 here cell+ cell+ pad length + 1+ ,
 ' callcomp ,
 pad s, 0 c,
 xcode_align
+\ token = entry + xword_token
 here last 8 + !
 \ payload = code + xliteral_size + xret_size
 here [ xstub_size xliteral ] +
@@ -3255,6 +3277,7 @@ create }~ ,
 \ redefine last word
 {: redefine
 last
+\ name = entry + xword_name
 cell+ cell+ cell+ skipstr
 xcode_align_addr
 dp }~ !
@@ -3268,6 +3291,7 @@ ret, }
 \ create effect with default handler
 {: effect ( x -( heap )- )
 create redefine
+\ effect stub: load the handler cell and branch to it
 0070 5800 x32, 0210 F940 x32, 0200 D61F x32,
 here 8 + ,
 }~ ,
@@ -3307,11 +3331,13 @@ create redefine
 'id tailcomp }
 
 \ search vocabulary
+\ traverse& yields the token cell; name = token + 2 cells
 {: search ( a -( pad fail )- a )
 traverse& cell+ cell+ pad s= cut cell- cell- }~ nip
 
 \ find word in context vocabulary
 {:: find ( -( pad fail )- a )
+\ the cell after the token is the compile behavior
 context @ search dup @ swap cell+ }~ @
 
 \ create colon definition
@@ -3337,6 +3363,7 @@ here ' compile 'id|
 
 \ change compile mode behavior
 {: does ( x -( heap )- )
+\ compile-mode cell = xword_comp
 last cell+ cell+ }~ !
 
 \ make most recently definted word immediate

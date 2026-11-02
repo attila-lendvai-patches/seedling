@@ -993,6 +993,8 @@ ex_(sp),hl
 
 \ handle effect
 
+\ z80 failure frame: threaded, 2-byte cells; cut below shows
+\ the handler, previous handler, and previous ERR_SP slots.
 native handle ( x h e -- )
 hl push
 tobc
@@ -1752,6 +1754,7 @@ dp @ + dp }~ !
 
 \ traverse linked list
 {: traverse& ( a -( fail & )- a )
+\ yields the name cell directly, unlike the conventional ports
 @ 0<> 'self & dup }~ cell+
 
 \ vocabulary functions
@@ -1765,6 +1768,7 @@ SEED constant current
 
 \ extend a list
 {: link ( a -( heap )- a )
+\ no instruction alignment on z80
 here swap }~ ,
 
 \ last word in the current vocabulary
@@ -1772,6 +1776,7 @@ here swap }~ ,
 current }~ @
 
 \ create new word returning the payload address
+\ entry: link, name (xword_name), then threaded code
 {: create ( -( heap )- )
 last link current ! word pad s, 0 c, ' , , }~ dat,
 
@@ -1781,6 +1786,7 @@ create }~ ,
 
 \ redefine last word
 {: redefine ( -( heap )- )
+\ skip link, name, and code cell
 last cell+ skipstr cell+ dp }~ !
 
 \ create constant
@@ -1798,11 +1804,13 @@ c, }~ ,
 'id }~ effect
 
 \ search vocabulary
+\ traverse& yields the name directly on z80
 {: search ( a -( pad fail )- a )
 traverse& pad s= cut }~ nip
 
 \ find word in current vocabulary
 {:: find ( -( pad fail )- a )
+\ skip the name, then read the code cell
 current search skipstr dup cell+ swap }~ @
 
 \ create colon definition
@@ -1831,6 +1839,7 @@ x' ! w,
 
 \ change compile mode behavior
 {: does ( x -( heap )- )
+\ skip link and name to the code cell
 last cell+ skipstr }~ !
 
 \ make most recently defined word immediate
@@ -1859,6 +1868,7 @@ A }~ emit
 
 \ emit all current words
 {: words ( -( emit )- )
+\ traverse& yields the name directly on z80
 { current traverse& s. space }~fail
 ' cr }~|
 
