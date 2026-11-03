@@ -2257,12 +2257,6 @@ dup c@ 0<> }~ drop
 
 \ list functions
 
-\ list extension
-{: link
-\ align here up to a cell boundary
-here 7 + 7 and 7 xor allot
-here swap }~ ,
-
 \ list traversal
 {: traverse&
 \ yields the previous entry's token cell
@@ -2318,6 +2312,12 @@ x' execute does
 {: ] }~fail
 
 x' }~fail does   \  TODO: not allowed in compile mode
+
+\ list extension
+{: link
+\ align here up to a cell boundary
+here 7 + 7 and 7 xor allot
+here swap }~ ,
 
 \ create new word returning the payload address
 {: create

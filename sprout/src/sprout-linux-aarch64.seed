@@ -3138,12 +3138,6 @@ drop }~ drop
 
 \ list functions
 
-\ list extension
-{: link
-\ align here up to a cell boundary
-here 7 + 7 and 7 xor allot
-here swap }~ ,
-
 \ list traversal
 {: traverse&
 \ yields the previous entry's token cell
@@ -3251,6 +3245,12 @@ current @ }~ @
 \ make current vocabulary the same as the context vocabulary
 {: definitions
 context @ current }~ !
+
+\ list extension
+{: link
+\ align here up to a cell boundary
+here 7 + 7 and 7 xor allot
+here swap }~ ,
 
 \ create new word returning the payload address
 {: create
