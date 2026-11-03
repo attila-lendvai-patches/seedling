@@ -121,6 +121,22 @@ move the interpreter above the quotations: it uses `"`, which uses
 `quotate`, which uses `{{`; moving the target number parser that far
 also shadows the host parser used for literals.
 
+The other bracket user is the target `link` alignment. It has only
+one caller, `create`, so its definition moves just before `create`,
+after `[`. The padding form names `xcell1-`:
+
+```forth
+here [ xcell1- xliteral ] +
+[ xcell1- xliteral ] and
+[ xcell1- xliteral ] xor
+allot
+```
+
+`xcell_mask` is the align-up mask, but it cannot be injected: on a
+16-bit host it is `0000FFF8` for a 64-bit target, while the target
+needs `FFFFFFFFFFFFFFF8`. The padding form needs only the low bits,
+so it stays safe on a 16-bit host.
+
 ### Code alignment
 
 Where instructions need alignment, do not repeat the size in the
