@@ -2035,11 +2035,14 @@ postpone undef
 
 x' >lit does
 
-\ E8 + rel32: xquote_open_size
+\ xquote_open_size is 5: E8 plus a rel32.  The bracket
+\ cannot be used here: [ needs interpret, which needs ",
+\ which needs quotate, which needs {{.
 {: {{
 E8 c, 0 }~ d,
 
-\ xrel_size: rel32 field
+\ xrel_size is 4.  The bracket cannot be used here for the
+\ same reason as {{; keep 4 in sync with xrel_size.
 {: }}
 dup here swap - swap 4 - d!
 89 c, 03 c,

@@ -2859,7 +2859,9 @@ postpone undef
 
 x' >lit does
 
-\ xquote_open_size: four instruction words
+\ xquote_open_size is 10: four instruction words.  The
+\ bracket cannot be used here: [ needs interpret, which
+\ needs ", which needs quotate, which needs {{.
 {: {{
 xcode_align
 here 10 +
@@ -2879,7 +2881,9 @@ x32,
 \ emitting the continuation: AArch64 instructions, and thus
 \ branch targets and displacements, are 4-byte units.
 \ offset in words: (here - token + xrel_size) / 4
-\ patch the B at token - xrel_size
+\ patch the B at token - xrel_size.  xrel_size is 4 and 2 is
+\ log2(xrel_size); the bracket cannot be used here for the
+\ same reason as {{, so keep 4 and 2 in sync with xrel_size.
 {: }}
 xcode_align
 dup here swap - 4 + 2 rshift
