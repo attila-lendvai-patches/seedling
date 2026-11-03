@@ -2316,7 +2316,13 @@ x' }~fail does   \  TODO: not allowed in compile mode
 \ list extension
 {: link
 \ align here up to a cell boundary
-here 7 + 7 and 7 xor allot
+\ xcell_mask is the align-up mask, but it is a
+\ target-width value a 16-bit host cannot hold.
+\ Use the low-bit mask xcell1- instead.
+here [ xcell1- xliteral ] +
+[ xcell1- xliteral ] and
+[ xcell1- xliteral ] xor
+allot
 here swap }~ ,
 
 \ create new word returning the payload address
