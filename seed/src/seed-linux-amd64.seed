@@ -1591,14 +1591,13 @@ x' }~fail does   \  TODO: not allowed in compile mode
 
 \ list extension
 {: link
-\ align here up to a cell boundary
-\ xcell_mask is the align-up mask, but it is a
-\ target-width value a 16-bit host cannot hold.
-\ Use the low-bit mask xcell1- instead.
-here [ xcell1- xliteral ] +
-[ xcell1- xliteral ] and
-[ xcell1- xliteral ] xor
-allot
+\ Align HERE up to a cell boundary.
+\ We use DUP so that it's not fragile to any allocation
+\ between the two HERE calls.
+here dup
+[ xcell1- xliteral ] +
+[ xcell1- xliteral ] invert and
+swap - allot
 here swap }~ ,
 
 \ create new word returning the payload address
