@@ -15,11 +15,28 @@ output \ this must be on the first line
 \ Glossary
 \ TOS: top of stack
 
-\ Imlementation
-\ EAX holds TOS, the top element of the data stack
-\ EBX points to the data stack (but top element is in EAX)
-\ ECX is a scratch register
-\ ESP is the call stack
+\ Implementation
+\ This port does not follow the System V ABI itself. Only the
+\ Linux syscall ABI at INT 0x80 is followed. Register roles:
+\   EAX            TOS, the top element of the data stack
+\   EBX            data stack pointer (TOS lives in EAX)
+\   ECX            scratch / second operand
+\   EDX, ESI, EDI, EBP
+\                  scratch; a helper names any it preserves
+\   ESP            return stack, also the process stack
+\   CF             the Seed carry flag
+\ The 32-bit syscall ABI takes the number in EAX and arguments
+\ in EBX, ECX, EDX, ESI, EDI, and EBP, returning in EAX. The
+\ wrapper saves EBX and maps the first argument from EDI into
+\ EBX because the Seed keeps its data stack pointer in EBX.
+\
+\ Helper contract: a helper called in the middle of a word
+\ preserves EAX, EBX, ESP, and CF unless its contract says
+\ otherwise. ECX is the conventional scratch; each helper states
+\ any further clobbers. DF must stay clear for the string
+\ instructions. The startup reads the process argument count
+\ and vector from the process stack before entering the Sprout
+\ loop.
 
 hex
 
@@ -29,6 +46,17 @@ hex
 \ their high 16 bits are 1. Keep this a 16-bit-safe literal:
 \ a 16-bit Seed must be able to build this source.
 1 constant ximage_base_hi
+
+\ [port] MEMORY MAP
+\   10000   image base (.text)
+\   18000   system variables and .bss start
+\   20000   end of the loaded segment; heap from brk grows up
+\ The .bss is mapped read-write for 8000 bytes. The empty .data
+\ section sits at the .bss address so the writable PT_LOAD has
+\ a writable PROGBITS section. The data stack starts after the
+\ effect slots and grows up toward the heap; the return stack
+\ and process stack are ESP. Keep the data stack below the heap
+\ base.
 
 \ [port] TARGET GEOMETRY
 \ Values describe the target, not the compiling Sprout. Offsets

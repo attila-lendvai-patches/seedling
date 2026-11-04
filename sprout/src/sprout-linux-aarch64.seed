@@ -18,12 +18,12 @@ output \ this must be on the first line
 \ Implementation
 \ This port does not follow AAPCS64 internally; only the
 \ Linux syscall ABI at SVC is followed. Register roles:
-\   X0/rax  TOS, the top element of the data stack
-\   X19/rbx data stack pointer (TOS lives in X0)
-\   X3/rcx  scratch / second operand
+\   X0      TOS, the top element of the data stack
+\   X19     data stack pointer (TOS lives in X0)
+\   X3      scratch / second operand
 \   X16, X17 scratch for addresses and instructions
 \   X18     carry flag
-\   X1/rsi, X2/rdx, X4/rdi, X5/rbp scratch
+\   X1, X2, X4, X5 scratch
 \   X20     process stack pointer at startup
 \   X29     shadow call stack pointer; X30 is unused
 \   SP      hardware stack pointer, 16-byte aligned

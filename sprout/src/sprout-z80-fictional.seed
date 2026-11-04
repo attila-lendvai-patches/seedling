@@ -22,6 +22,26 @@ output \ this must be the first line
 
 hex
 
+\ [port] ABI
+\   BC      TOS
+\   DE      data stack pointer; grows up from STK_BOT
+\   HL      scratch pointer
+\   IX      threaded-code pointer; NEXT is JP (IX)
+\   SP      return stack; grows down from STK_TOP
+\   A, F    scratch; CF is the Seed carry flag
+\ The data and return stacks share E000..FF00; keep them apart.
+\ Failure frames live on the return stack: handler, previous
+\ handler, previous ERR_SP (see CUT and }~FAIL).
+
+\ [port] MEMORY MAP
+\   0000    raw image base; keep the image below STK_BOT
+\   2000    system variables
+\   2031    dictionary start
+\   E000    STK_BOT: heap ceiling and data stack bottom
+\   FF00    STK_TOP: return stack top
+\ The heap grows up from DICTIONARY to STK_BOT. Port 0 is the
+\ input and output channel; there is no ELF segment.
+
 \ [port] TARGET GEOMETRY (Z80)
 \ 16-bit cells (2 bytes), little-endian, byte-addressed, 64K.
 \ The image is a raw binary loaded at 0; there is no ELF base.
