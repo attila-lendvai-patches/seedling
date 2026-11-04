@@ -80,7 +80,7 @@ hex
 \ xinst_size is the width of a target instruction word.
 \ xcall_size is the size of the stack-call sequence.
 \ xquote_open_size is the size of the quotation opener emitted
-\ by x{{.
+\ by x{{; it equals xcall_size.
 \ xrel_size is the width of a relative branch field.
 40 constant xcell_bits          \ 64 bits
 3  constant xcelllog            \ for shifts
@@ -96,7 +96,7 @@ xcell1- invert constant xcell_mask      \ FFF8
 xcell 2 * constant xword_comp
 xcell 2 * constant xname_from_token
 10 constant xcall_size
-10 constant xquote_open_size
+xcall_size constant xquote_open_size
 18 constant xliteral_size
 8 constant xret_size
 xliteral_size xret_size + constant xstub_size
@@ -1022,8 +1022,8 @@ X16 push
 
 {: x}} ( a -( heap )- )
 xcode_align_bytes align
-dup here swap - xrel_size + 2 rshift
-swap xrel_size - >r
+dup here swap - xinst_size + 2 rshift
+swap xinst_size - >r
 dup FFFF and swap drop
 1400 r> x32!
 tos_store
@@ -2859,7 +2859,7 @@ postpone undef
 
 x' >lit does
 
-\ xquote_open_size is 10: four instruction words.  The
+\ xquote_open_size is 10 (hex), 16 bytes: four instructions.
 \ bracket cannot be used here: [ needs interpret, which
 \ needs ", which needs quotate, which needs {{.
 {: {{
@@ -2880,10 +2880,10 @@ x32,
 \ literal), so align to 4 bytes before patching the branch and
 \ emitting the continuation: AArch64 instructions, and thus
 \ branch targets and displacements, are 4-byte units.
-\ offset in words: (here - token + xrel_size) / 4
-\ patch the B at token - xrel_size.  xrel_size is 4 and 2 is
-\ log2(xrel_size); the bracket cannot be used here for the
-\ same reason as {{, so keep 4 and 2 in sync with xrel_size.
+\ offset in words: (here - token + xinst_size) / 4
+\ patch the B at token - xinst_size.  xinst_size is 4 and 2 is
+\ log2(xinst_size); the bracket cannot be used here for the
+\ same reason as {{, so keep 4 and 2 in sync with xinst_size.
 {: }}
 xcode_align
 dup here swap - 4 + 2 rshift

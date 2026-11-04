@@ -79,8 +79,8 @@ hex
 \ xliteral_size and xret_size are the lengths emitted by
 \ literal and ret,; xstub_size is their sum, the payload
 \ of create.
-\ xcall_size is the length of a call instruction; the
-\ quotation opener x{{ has the same length.
+\ xcall_size is the length of a call instruction.
+\ xquote_open_size is the same length, named for x{{.
 \ xjump_size is the length of a forward jump placeholder.
 \ xrel_size is the width of a relative branch
 \ displacement field.
@@ -96,6 +96,7 @@ xcell1- invert constant xcell_mask      \ FFF8
 xcell 2 * constant xword_comp
 xcell 2 * constant xname_from_token
 5 constant xcall_size
+xcall_size constant xquote_open_size
 5 constant xjump_size
 11 constant xliteral_size
 1 constant xret_size
