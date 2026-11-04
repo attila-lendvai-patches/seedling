@@ -1,6 +1,8 @@
 name: CI
 
 on:
+  workflow_dispatch:
+
   push:
     branches:
       - master
@@ -8,53 +10,109 @@ on:
       - attila
     paths-ignore:
       - '**.md'
+      - 'plan/**'
+      - 'emacs/**'
 
   pull_request:
     branches:
       - master
     paths-ignore:
       - '**.md'
+      - 'plan/**'
+      - 'emacs/**'
+
+# Superseded runs of the same ref are cancelled. Limited to pull
+# requests so that a push to a long-lived branch keeps its own status.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# Each job is one host suite, driven by tools-for-build/ci-linux.sh.
+# The suffix in a test-<arch>.sh name is the host, not the target:
+# every suite cross-compiles to all ports and runs the foreign ones
+# through qemu, which needs no binfmt registration.
 
 jobs:
-  build:
-    runs-on: ${{ matrix.os }}
-
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-          - os: ubuntu-24.04-arm
+  build-linux-x86_64:
+    name: "linux x86_64"
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          show-progress: false
 
       - name: Install build and test dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-              qemu-user-static binfmt-support elfutils libz80ex-dev \
-              build-essential git
-
-      - name: Enable binfmt for foreign architectures
-        run: |
-          for handler in qemu-x86_64 qemu-i386 qemu-aarch64; do
-              sudo update-binfmts --enable "$handler" 2>/dev/null || true
-          done
+        run: sudo tools-for-build/install-ubuntu-deps.sh
 
       - name: Run test suite
-        run: bash tools-for-build/test.sh
+        run: tools-for-build/ci-linux.sh --native
 
       - name: Upload test artifacts
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: test-${{ matrix.os }}
+          name: test-x86_64
           path: |
             tools-for-build/build/
             seed/bin/
           if-no-files-found: ignore
 
+  build-linux-aarch64:
+    name: "linux aarch64"
+    runs-on: ubuntu-24.04-arm
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          show-progress: false
+
+      - name: Install build and test dependencies
+        run: sudo tools-for-build/install-ubuntu-deps.sh
+
+      - name: Run test suite
+        run: tools-for-build/ci-linux.sh --native
+
+      - name: Upload test artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-aarch64
+          path: |
+            tools-for-build/build/
+            seed/bin/
+          if-no-files-found: ignore
+
+  # The aarch64 host suite on an x86_64 runner. It covers the aarch64
+  # Seed as the *compiling* host, which the arm runner exercises too,
+  # but here it is reproduced without waiting for that queue.
+  build-linux-x86_64-cross-aarch64:
+    name: "linux x86_64 -> aarch64 host"
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          show-progress: false
+
+      - name: Install build and test dependencies
+        run: sudo tools-for-build/install-ubuntu-deps.sh
+
+      - name: Run aarch64 host suite under qemu
+        run: tools-for-build/ci-linux.sh --cross
+
+      - name: Upload test artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-x86_64-cross-aarch64
+          path: |
+            tools-for-build/build/
+            seed/bin/
+          if-no-files-found: ignore

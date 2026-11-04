@@ -22,13 +22,56 @@ LOG="$BUILD/test.log"
 mkdir -p "$BUILD"
 : >"$LOG"
 
+# Per-step limit for the external suites. The in-process checks are
+# bounded by the source tree and are not timed. qemu, the z80sim
+# checkout and its build are the steps that can hang.
+STEP_TIMEOUT="${STEP_TIMEOUT:-20m}"
+
+# GitHub folds a step between ::group:: and ::endgroup::; outside CI
+# they are ordinary log lines. The summary table is written only when
+# GitHub provides a file for it.
+summary="${GITHUB_STEP_SUMMARY:-/dev/null}"
+
+_run() {
+    local status
+
+    set +e
+    # A shell function cannot be handed to timeout; run it directly.
+    if declare -F "$1" >/dev/null; then
+        "$@" 2>&1 | tee -a "$LOG"
+    else
+        timeout "$STEP_TIMEOUT" "$@" 2>&1 | tee -a "$LOG"
+    fi
+    status=$?
+    set -e
+    return "$status"
+}
+
 run() {
-    "$@" 2>&1 | tee -a "$LOG"
+    local label=$1
+    local start=$SECONDS
+    local status result=ok
+
+    shift
+    echo "::group::$label"
+    if _run "$@"; then status=0; else status=$?; fi
+    echo "::endgroup::"
+
+    if [ "$status" -ne 0 ]; then
+        result="failed ($status)"
+    fi
+    printf '| %s | %s | %ss |\n' "$label" "$result" "$((SECONDS - start))" \
+        >>"$summary"
+
+    return "$status"
 }
 
 source "$TOOLS/test-common.sh"
 
 echo "==> log: ${LOG#"$ROOT"/}"
+
+printf '### test suite\n\n| Step | Result | Time |\n|:-----|:-------|-----:|\n' \
+    >>"$summary"
 
 case "$(uname -m)" in
     x86_64|amd64)
@@ -50,17 +93,17 @@ echo "==> host architecture: $host"
 
 BOOTSTRAP=$(bootstrap_for_host)
 
-run source_line_check
-run source_literal_check
-run committed_binary_check
+run "source line check" source_line_check
+run "source literal check" source_literal_check
+run "committed binaries" committed_binary_check
 export TEST_CHECKS_DONE=1
 
-run bash "$TOOLS/test-$host.sh"
+run "host suite ($host)" bash "$TOOLS/test-$host.sh"
 
 # An amd64 host can run i386 ELF binaries natively, so exercise the
 # i386 host suite there too.
 if [ "$host" = amd64 ]; then
-    run bash "$TOOLS/test-i386.sh"
+    run "i386 host suite" bash "$TOOLS/test-i386.sh"
 fi
 
-run bash "$TOOLS/test-z80.sh"
+run "z80 suite" bash "$TOOLS/test-z80.sh"

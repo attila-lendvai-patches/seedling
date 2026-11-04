@@ -55,17 +55,20 @@ existing words already says it.
   — Sprout ports.
 * `seed/README.md`, `sprout/README.md` — the language specifications.
   `sprout/EXECUTION.md` explains interpret/compile mode duality.
+* `tools-for-build/ci-linux.sh` — the CI matrix, also run locally:
+  `--native`, `--cross` or `--all`.
 * `tools-for-build/test.sh` — full test suite; dispatches on the host
   architecture and runs the z80 suite.
 * `tools-for-build/test-<arch>.sh` — host-architecture suites. The suffix
   is the host, not the target.
-* `tools-for-build/README.md` — prerequisites, including binfmt setup.
+* `tools-for-build/README.md` — prerequisites.
+* `tools-for-build/install-ubuntu-deps.sh` — the one package list.
 * `.github/workflows/ci.yaml` — installs dependencies and calls
-  `tools-for-build/test.sh`.
+  `tools-for-build/ci-linux.sh`.
 
-Add checks to `tools-for-build/test-common.sh`; CI only calls the test
-script. `tools-for-build/build/` and `tools-for-build/z80sim/` are not
-committed.
+Add checks to `tools-for-build/test-common.sh`; CI only calls the
+scripts above. `tools-for-build/build/` and `tools-for-build/z80sim/`
+are not committed.
 
 ## Invariants to re-establish after every change
 
@@ -97,7 +100,7 @@ chmod +x tools-for-build/build/seed.amd64
 cmp tools-for-build/build/seed.amd64 tools-for-build/build/seed.amd64.2
 ```
 
-The full run needs binfmt_misc support for foreign architectures (see
+The full run needs `qemu-user-static` for foreign targets (see
 `tools-for-build/README.md`), `eu-elflint` (package `elfutils`), and a
 z80 simulator. `tools-for-build/test-z80.sh` checks out
 `https://github.com/nagydani/z80sim.git` at a pinned revision under
@@ -107,7 +110,7 @@ z80 simulator. `tools-for-build/test-z80.sh` checks out
 rm -rf tools-for-build/build && bash tools-for-build/test.sh
 ```
 
-CI installs the dependencies and runs the same script.
+CI installs the dependencies and runs the same scripts.
 
 ## Dependencies
 
@@ -120,12 +123,12 @@ Whitelisted existing dependencies:
 * The standard shell and the usual POSIX/core utilities.
 * `git`, `make`, `gcc` (`build-essential`) to build the pinned
   `z80sim`.
-* `qemu-user-static` and `binfmt-support` to execute foreign targets.
+* `qemu-user-static` to execute foreign targets.
 * `elfutils` (`eu-elflint`) for ELF validation.
 * `libz80ex-dev` for `z80sim`.
 * The pinned `z80sim` checkout under `tools-for-build/z80sim/`.
 
-`sudo`, `apt-get`, and `update-binfmts` are for CI setup only. Anything
+`sudo` and `apt-get` are for CI setup only. Anything
 not listed above is not whitelisted.
 
 ## Porting conventions

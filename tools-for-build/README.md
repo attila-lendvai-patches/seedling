@@ -1,8 +1,9 @@
 # Build tools
 
-The test entry points live here. `test.sh` runs the suite for the
-current host architecture and the z80 suite. Runtime probes run as
-each Seed and Sprout binary is built.
+The test entry points live here. `ci-linux.sh` runs the matrix, both
+in CI and locally; `test.sh` runs the suite for the current host
+architecture and the z80 suite. Runtime probes run as each Seed and
+Sprout binary is built.
 
 The suffix in a `test-<arch>.sh` name is the **host** architecture,
 not the target. Every suite cross-compiles to all the Seed and Sprout
@@ -10,12 +11,14 @@ ports.
 
 ## Scripts
 
+* `ci-linux.sh` — runs the matrix: `--native`, `--cross` or `--all`.
 * `test.sh` — dispatches on `uname -m` and runs the suites below.
 * `test-amd64.sh`, `test-i386.sh`, `test-aarch64.sh` — the host suite.
 * `test-z80.sh` — the z80 Seed through `z80sim`.
 * `test-runtime.sh` — manual wrapper for the runtime probes.
 * `probes/` — the Seed programs used by the runtime suite.
 * `test-common.sh` — shared checks and the cross-compilation matrix.
+* `install-ubuntu-deps.sh` — the Ubuntu packages the suite needs.
 
 `build/` and `z80sim/` are generated and ignored by git.
 
@@ -27,57 +30,56 @@ terminal does not lose the log. Set `TEST_DEBUG=1` to trace commands:
 TEST_DEBUG=1 bash tools-for-build/test.sh
 ```
 
+Every step is wrapped in a `::group::` for GitHub's job log and runs
+under `timeout` (`STEP_TIMEOUT`, default 20 minutes; the in-process
+source checks are not timed). When GitHub sets `GITHUB_STEP_SUMMARY`,
+`test.sh` also appends a table of steps, results and durations to it.
+
 `test-common.sh` is a library; running it directly reports that and
 exits.
 
 ## Prerequisites
 
 * `bash`, `git`, `make`, `gcc`
-* `qemu-user-static` and `binfmt-support`, optional, for executing
-  binaries of a foreign architecture
+* `qemu-user-static`, optional, for executing binaries of a foreign
+  architecture
 * `eu-elflint` (package `elfutils`)
 * `libz80ex-dev` for building `z80sim`
 
-On Debian/Ubuntu:
+On Debian/Ubuntu, install the same list CI uses:
 
 ```sh
-sudo apt-get install -y \
-    qemu-user-static binfmt-support elfutils libz80ex-dev \
-    build-essential git
+sudo tools-for-build/install-ubuntu-deps.sh
 ```
 
 ## Running another host's suite by hand
 
-`test.sh` runs the native host suite and the z80 suite. To run a
-different `test-<arch>.sh` on the current machine, install `qemu-user`
-or otherwise provide the matching `qemu-<arch>` in `PATH`.  Without a
-runner, the suite skips the affected target with a `SKIP:` note and
-exits successfully.
-
-For example, to run the aarch64 suite on an amd64 host:
+`ci-linux.sh --native` runs the host suite and the z80 suite for the
+current machine. `ci-linux.sh --cross` runs the aarch64 host suite on
+an x86_64 machine, where the committed aarch64 Seed compiles every
+port:
 
 ```sh
-sudo apt-get install -y qemu-user-static binfmt-support
-sudo update-binfmts --enable qemu-aarch64
-# enable qemu-i386 too if the kernel cannot execute 32-bit x86 natively
-sudo update-binfmts --enable qemu-i386
-
-bash tools-for-build/test-aarch64.sh
+tools-for-build/ci-linux.sh --cross
 ```
 
-To run the amd64 suite on an aarch64 host, enable `qemu-x86_64` (and
-`qemu-i386` for the i386 cross-checks):
+`--all`, the default, runs both.
+
+A foreign binary is run by prefixing it with `qemu-<arch>`, so no
+binfmt registration is needed; `qemu-user-static` from the
+prerequisites is enough, and the scripts do not print the prefix.
+binfmt matters only for the one case the kernel handles itself: 32-bit
+x86 binaries on an amd64 machine without 32-bit support.
+
+To run the amd64 host suite on an aarch64 machine, provide
+`qemu-x86_64` and call that suite directly:
 
 ```sh
-sudo update-binfmts --enable qemu-x86_64
-sudo update-binfmts --enable qemu-i386
-
 bash tools-for-build/test-amd64.sh
 ```
 
-The suites execute native targets directly and foreign targets through
-a matching `qemu-<arch>` when it is installed.  Without a runner they
-skip the target.  The scripts do not print `qemu-*` prefixes.
+Without a runner a suite skips the affected target with a `SKIP:` note
+and exits successfully, so check the log when a run looks too quick.
 
 ## Target availability
 
