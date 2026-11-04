@@ -41,7 +41,7 @@ exits.
 ## Prerequisites
 
 * `bash`, `git`, `make`, `gcc`
-* `qemu-user-static`, optional, for executing binaries of a foreign
+* `qemu-user`, optional, for executing binaries of a foreign
   architecture
 * `eu-elflint` (package `elfutils`)
 * `libz80ex-dev` for building `z80sim`
@@ -66,8 +66,8 @@ tools-for-build/ci-linux.sh --cross
 `--all`, the default, runs both.
 
 A foreign binary is run by prefixing it with `qemu-<arch>`, so no
-binfmt registration is needed; `qemu-user-static` from the
-prerequisites is enough, and the scripts do not print the prefix.
+binfmt registration is needed; `qemu-user` from the prerequisites is
+enough, and the scripts do not print the prefix.
 binfmt matters only for the one case the kernel handles itself: 32-bit
 x86 binaries on an amd64 machine without 32-bit support.
 

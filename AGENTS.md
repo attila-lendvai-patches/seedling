@@ -100,7 +100,7 @@ chmod +x tools-for-build/build/seed.amd64
 cmp tools-for-build/build/seed.amd64 tools-for-build/build/seed.amd64.2
 ```
 
-The full run needs `qemu-user-static` for foreign targets (see
+The full run needs `qemu-user` for foreign targets (see
 `tools-for-build/README.md`), `eu-elflint` (package `elfutils`), and a
 z80 simulator. `tools-for-build/test-z80.sh` checks out
 `https://github.com/nagydani/z80sim.git` at a pinned revision under
@@ -123,7 +123,7 @@ Whitelisted existing dependencies:
 * The standard shell and the usual POSIX/core utilities.
 * `git`, `make`, `gcc` (`build-essential`) to build the pinned
   `z80sim`.
-* `qemu-user-static` to execute foreign targets.
+* `qemu-user` to execute foreign targets.
 * `elfutils` (`eu-elflint`) for ELF validation.
 * `libz80ex-dev` for `z80sim`.
 * The pinned `z80sim` checkout under `tools-for-build/z80sim/`.
@@ -231,9 +231,14 @@ ELF code.
 * Use one space after a sentence-ending period, never two: in
   documentation, code comments, and commit messages. Spacing used to
   align columns in code or comment tables is layout, not prose.
-* In prose, write code words in all caps so it is clear which words
-  are English grammar and which are Seed or Sprout words. This applies
-  to documentation, code comments, and commit messages.
+* In prose, write a word in all caps only when it is a word actually
+  defined in the Seed or Sprout sources, so it is clear which words are
+  language vocabulary and which are English. `HERE` is the Seed word;
+  "here" is English. Apply this to documentation, code comments, and
+  commit messages. Do not all-cap commit prefixes, tool names,
+  architecture names, file names, or ordinary English. The
+  `housekeeping:`, `doc:`, and `test:` prefixes are informal commit
+  labels, not code words.
 
 ## Pitfalls
 

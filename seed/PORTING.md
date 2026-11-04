@@ -13,8 +13,8 @@ A port is not finished because it builds on amd64. It is finished when:
 2. every capable Seed/Sprout produces byte-identical output for it;
 3. it self-hosts for at least two generations;
 4. every emitted ELF passes `eu-elflint -q`;
-5. the z80 roots still match: z80 self-host, z80 -> amd64,
-   z80 -> i386, and z80 -> aarch64.
+5. the z80 roots still match: z80 self-host and z80 -> amd64,
+   z80 -> i386, z80 -> aarch64, and all four Sprout sources.
 
 Sprout follows the same rules, but a Seed port can land first.
 
@@ -30,6 +30,24 @@ Sprout follows the same rules, but a Seed port can land first.
 Copy the nearest source, then change only what the target requires.
 Keep shared logic common and describe the *target* geometry; never
 derive it from the compiling host.
+
+## The z80 model
+
+The z80 is not a conventional token/comp port. Cells are 16-bit, code
+is threaded, and a word entry is the link cell, the zero-terminated
+name, then the threaded code or payload. `CREATE` appends a call to
+`DAT,`; `NEXT` is `JP (IX)`.
+
+The ABI is: `BC` is TOS, `DE` is the data stack pointer and grows up
+from `STK_BOT`, `SP` is the return stack and grows down from
+`STK_TOP`, `IX` is the threaded-code pointer, and `A`/`F` are scratch
+with `CF` as the Seed carry flag. The data and return stacks share
+`E000..FF00`; keep them apart.
+
+The image is a raw binary loaded at 0. The heap grows up from
+`DICTIONARY` to `STK_BOT`, so keep the largest image below `STK_BOT`;
+the AArch64 Sprout needed `STK_BOT` raised to `E000`. Port 0 is the
+input and output channel; there is no ELF segment.
 
 ## Source shape
 
@@ -48,6 +66,30 @@ A Seed source starts with `output` on the first line. The usual order is:
 Part I runs while the source is being compiled. Part II is the target
 program that will compile the next generation. Do not use a target word
 at compile time unless it is also defined as a host word.
+
+## Host and target names
+
+The source is read twice. In Part I the names below are host words that
+build the target image. In Part II the same name may be a target word
+in the image. The later definition shadows the earlier one for the
+rest of the source.
+
+| name | Part I, host | Part II, target |
+| --- | --- | --- |
+| `{` | emit via `XCOMPILE` | build at `HERE` |
+| `{:`, `{::` | create a target entry | create a runtime entry |
+| `CONSTANT` | emit a target constant | create a runtime constant |
+| `EFFECT` | emit a target effect | create a runtime effect |
+| `DOES` | patch the compile field | set compile behavior |
+| `IMMEDIATE` | set the compile field | set compile behavior |
+| `POSTPONE` | emit a forward entry | postpone a definition |
+| `NATIVE` | emit a target entry | host only |
+| `LITERAL` | use `XLITERAL` | emit a target literal |
+| `{{`, `}}` | use `X{{`, `X}}` | emit and patch |
+
+Read the definitions in order: a name is the host version only until
+its target definition is executed. The `X` prefix marks host-side
+cross-compiler words; `_` marks hidden target words.
 
 ## Target geometry
 
@@ -121,21 +163,23 @@ move the interpreter above the quotations: it uses `"`, which uses
 `quotate`, which uses `{{`; moving the target number parser that far
 also shadows the host parser used for literals.
 
-The other bracket user is the target `link` alignment. It has only
-one caller, `create`, so its definition moves just before `create`,
-after `[`. The padding form names `xcell1-`:
+The other bracket user is the target `LINK` alignment. It has only
+one caller, `CREATE`, so its definition moves just before `CREATE`,
+after `[`. It computes the padding as the aligned address minus the
+start, matching the host `XALIGN` definition:
 
 ```forth
-here [ xcell1- xliteral ] +
-[ xcell1- xliteral ] and
-[ xcell1- xliteral ] xor
-allot
+here dup
+[ xcell1- xliteral ] +
+[ xcell1- xliteral ] invert and
+swap - allot
 ```
 
-`xcell_mask` is the align-up mask, but it cannot be injected: on a
-16-bit host it is `0000FFF8` for a 64-bit target, while the target
-needs `FFFFFFFFFFFFFFF8`. The padding form needs only the low bits,
-so it stays safe on a 16-bit host.
+`DUP` keeps the start address, so the padding does not depend on a
+second `HERE` read and cannot be disturbed by an `ALLOT` between the
+reads. `XCELL1-` fits in 16 bits, and the target `INVERT` builds the
+full align-up mask, so no wide host value is emitted. `XCELL_MASK`
+remains the host `XALIGN` mask; do not inject it into target code.
 
 ### Code alignment
 
@@ -182,6 +226,52 @@ code ...        aligned to xcode_align_bytes
 `xname_from_token` is the offset of the name from the token field.
 The z80 uses a different, threaded layout; keep its `xword_name` and
 `xrel_size` local.
+
+## Target ABI and call convention
+
+A port defines its own internal ABI. The platform ABI is followed only
+at the syscall boundary; do not assume the platform's C ABI for the
+port's own words. The conventional register roles are:
+
+| port | TOS | data stack | return stack | carry |
+| --- | --- | --- | --- | --- |
+| amd64 | `RAX` | `RBX` | `RSP` | `CF` |
+| i386 | `EAX` | `EBX` | `ESP` | `CF` |
+| aarch64 | `X0` | `X19` | `X29`, with `SP` aligned | `X18` |
+| z80 | `BC` | `DE` | `SP` | `F` |
+
+On x86, `RSP`/`ESP` is both the Seed return stack and the process
+stack. On AArch64, `SP` stays 16-byte aligned for the kernel and `X29`
+is the Seed return stack; the startup copies `SP` to `X29`. On z80,
+the data stack grows up from `STK_BOT` and `SP` grows down from
+`STK_TOP`.
+
+A call pushes a return address on the return stack and jumps to the
+callee; a return pops it and jumps. The ISA's native return is not the
+Seed return: on AArch64 the 4-byte `RET` branches to `X30`, which the
+port leaves unused, while `RET,` emits `LDR X16,[X29],#8; BR X16`.
+On x86 the two happen to coincide, but port code must not rely on it.
+
+`CALL` and `RET,` are the emitters. `CALLCOMP` emits a call to a
+compile-time xt, `TAILCOMP` emits a tail branch, and `ENDCOMP` is
+`TAILCOMP` plus a failure. The geometry carries the sizes a port uses:
+`XCALL_SIZE`, `XRET_SIZE`, `XSTUB_SIZE` = `XLITERAL_SIZE` +
+`XRET_SIZE`, `XQUOTE_OPEN_SIZE`, and `XJUMP_SIZE`.
+
+A helper called in the middle of a word preserves TOS, the data stack
+pointer, the return-stack pointer (`X29` on AArch64, `SP` or `ESP`
+elsewhere), `SP` alignment, and the carry flag. It may clobber the
+registers its contract names; the caller saves anything else. The
+AArch64 source header is the model for an exact register and clobber
+table; the x86 and z80 headers state theirs.
+
+At the syscall boundary, x86-64 uses `SYSCALL` with the number in
+`RAX`, arguments in `RDI`, `RSI`, `RDX`, `R10`, `R8`, and `R9`, and
+return in `RAX`; the kernel clobbers `RCX` and `R11`. i386 uses
+`INT 0x80` with the number in `EAX` and arguments in `EBX`, `ECX`,
+`EDX`, `ESI`, `EDI`, and `EBP`; the wrapper saves `EBX` because the
+Seed keeps its data stack pointer there. AArch64 uses `SVC` with the
+number in `X8` and arguments in `X0-X5`. The z80 uses port 0.
 
 ## 16-bit-cell rules
 
@@ -312,6 +402,30 @@ Do not mix host heap addresses and target image addresses. The image is
 built in the host heap and dumped as target bytes; the two are related
 only through `offset`.
 
+## Branch displacements
+
+A relative branch has two independent facts: the width of the field
+(`XREL_SIZE`) and the address the displacement is measured from.
+
+- x86 measures from the end of the instruction: the displacement is
+  `target - (site + instruction_size)`, where the instruction size is
+  `XCALL_SIZE` or `XJUMP_SIZE` (or the actual branch length).
+- AArch64 measures from the instruction address: an imm26 is
+  `(target - site) >> 2`.
+- The z80 `JR` measures from the end of the instruction; `JP` and
+  `CALL` take an absolute address.
+
+Do not copy a branch formula between ports. Check the host
+`RLABEL`/`JMP` macros and the target `CALLCOMP`/`TAILCOMP` emitters.
+`XJUMP_SIZE` and `XCALL_SIZE` are instruction sizes, not displacement
+bases.
+
+The x86 Seeds keep the explicit fixed long-branch macros (`RLABEL`,
+`RLABEL_F`, ...). The amd64/i386 Sprouts select a short or long branch
+with `LABEL_OFFSET`, `SHORT_RLABEL?`, and `MAYBE_RS`. Keep the Seeds on
+the simpler fixed form; do not port the Sprout selection machinery
+unless that tradeoff changes.
+
 ## Cross-compilation
 
 The compile-mode behavior of a target word cannot be executed on the
@@ -348,6 +462,14 @@ Key consequences:
 - If a whole target definition is truncated at a word that is not in
   the target vocabulary yet, check the definition order first.
 
+A compile-mode behavior is a constructor or a terminator. A
+constructor (`{`, `"`, `[`, `'`, `ASCII`) leaves a value or xt for the
+compiler. A terminator (`}`, `}~`, `}~FAIL`, `}~|`, `}~SELF`,
+`'ID}~|`) emits its code and then fails, which ends the compile loop.
+The z80 registers the same behaviors in `XCOMPS`: `COMMA`, `ENDCOMP`,
+`ENDTAIL`, `SELFREF`, `~SELFREF`, `>LIT`, `QUOTATE`, and `EXEC`, each
+a target pointer used as the lookup key.
+
 Known traps from this port:
 
 - `}~self` used `*` before `*` was defined in the target vocabulary.
@@ -356,6 +478,63 @@ Known traps from this port:
   emitted byte-swapped.
 - `shl`/`shr` put `immr` in bits 16..21, where a 16-bit `x32,` silently
   dropped it.
+
+## Quotations
+
+`{` starts a quotation at `HERE`: it saves the body address and calls
+the compiler. The compiled layout is:
+
+    opener        push the body address and branch over the body
+    body          the computation
+    continuation  pop the return address into TOS
+
+The opener is emitted by `{{` (target) or `X{{` (host). `X{{` returns
+the body address so `X}}` can patch the branch; the target `{{` does
+not push the body address, so the xt supplied by `QUOTATE` remains TOS
+for `EXECUTE`. `}}` patches the opener's branch to the continuation
+and emits `TOS_STORE` plus the pop. `XQUOTE_OPEN_SIZE` is the opener
+size and `XREL_SIZE` is the branch-field width; on x86 the opener may
+have the same size as `XCALL_SIZE`, in which case say so in the
+geometry comment.
+
+`}~SELF` emits a branch back to the body start and then fails. `}~`
+emits a tail call to the next word, `}~FAIL` raises failure, and
+`}~|` ends with a disjunction. These endings are compile-mode
+terminators: they emit code and then fail so the enclosing compiler
+stops. Constructors (`{`, `"`, `[`, `'`, `ASCII`) instead leave a
+value or xt for the compiler to consume.
+
+## Failure and effect frames
+
+`&` installs a failure handler for the computation that follows. `|`
+executes one computation with another as its failure handler.
+`HANDLE` installs a handler for an effect, `CUT` removes the current
+handler, and `}~FAIL` unwinds to the nearest handler. `FAIL` holds the
+current handler address and `ERR_SP` points at the innermost frame on
+the return stack.
+
+For the conventional ports the frame is, from `ERR_SP` up, one cell
+each:
+
+    +0  handler slot pointer
+    +1  previous handler address
+    +2  previous ERR_SP
+    +3  saved data stack pointer
+
+`HANDLE` and `&` build such a frame. On those ports `}~FAIL` walks
+the chain, restores each handler cell and `ERR_SP`, and jumps to the
+handler it finds. `CUT` discards the top frame and restores the
+previous one. The startup installs a circular outermost frame at label
+6: the handler-pointer slot holds the address of `FAIL`, so the walk
+matches it instead of continuing past the frame.
+
+The z80 uses 2-byte cells. `CUT` reads a handler pointer, the previous
+handler, and the previous `ERR_SP` from the frame, then moves the live
+stack below it; read `HANDLE` and `CUT` for the exact slot count and
+register sequence.
+
+Do not assume a frame layout from another port. The slot order and the
+saved-pointer convention are part of the port's ABI.
 
 ## Postponed definitions
 
@@ -403,7 +582,7 @@ cmp tools-for-build/build/seed.amd64 tools-for-build/build/seed.amd64.2
 
 Rebuild the committed binary whenever the amd64 source changes, and
 verify it still behaves identically on every source. The test suite
-warns when a committed `seed/bin/seed-*` differs from a fresh build.
+fails when a committed `seed/bin/seed-*` differs from a fresh build.
 
 A port also needs a two-generation self-host check and the full cross
 matrix: every capable Seed and Sprout compiles the port, and all
@@ -413,21 +592,29 @@ outputs agree byte for byte.
 
 The suite lives in `tools-for-build/`:
 
-- `tools-for-build/test.sh` dispatches on the host architecture and
-  runs the z80 suite;
-- `tools-for-build/test-<arch>.sh` is the host architecture suite;
-- `tools-for-build/test-common.sh` holds the shared cross-compilation
-  matrix and the checks;
-- `tools-for-build/README.md` lists prerequisites and binfmt setup.
+- `ci-linux.sh [--native|--cross|--all]` drives the CI matrix and can
+  be run locally;
+- `test.sh` runs the native host suite and the z80 suite;
+- `test-<arch>.sh` is a host-architecture suite;
+- `test-common.sh` holds the shared cross-compilation matrix, the
+  runtime probes, and the checks;
+- `probes/` holds the Seed programs used by the runtime suite;
+- `install-ubuntu-deps.sh` is the one package list;
+- `README.md` describes prerequisites and target availability.
 
-Add a new port to `test-common.sh` (not to CI). CI installs the
-dependencies and runs `bash tools-for-build/test.sh`. The same applies
-to the z80 roots: add the new direction to the z80 suite.
+Add a new port to `test-common.sh`; add a runtime probe to `probes/`
+and its expected whitespace-stripped stdout to `probe_expected` in
+`test-common.sh`. A test that exposes a bug is a separate `test:`
+commit before the fix.
+
+`qemu-user` is optional. Without a runner for a foreign target, the
+suite skips that target with a `SKIP:` note; the full cross matrix runs
+only when amd64, i386, and aarch64 are all executable.
 
 Run the full suite with:
 
 ```sh
-rm -rf tools-for-build/build && bash tools-for-build/test.sh
+rm -rf tools-for-build/build && bash tools-for-build/ci-linux.sh --all
 ```
 
 ## Pitfalls
@@ -448,6 +635,15 @@ rm -rf tools-for-build/build && bash tools-for-build/test.sh
 - `rshift` on a negative host value when the intent was a target-side
   sign-preserving shift.
 - Forgetting to update the cross matrix in `test-common.sh`.
+- Using the ISA's native return instead of `RET,`; on AArch64 `RET`
+  branches to `X30`, which the port leaves unused.
+- Copying a branch displacement formula between ports; x86 measures
+  from the end of the instruction, AArch64 from the instruction.
+- A helper that clobbers TOS, the data stack pointer, the call stack,
+  or `CF` without saying so.
+- Assuming a failure-frame slot order from another port.
+- Forgetting that host `X{{` returns the body address while target
+  `{{` does not push it.
 
 ## Checklist
 
@@ -465,4 +661,26 @@ rm -rf tools-for-build/build && bash tools-for-build/test.sh
       documented in the source;
 - [ ] `tools-for-build/test-common.sh` covers the new port;
 - [ ] `seed/bin/seed-linux-amd64` is current;
+- [ ] the source header states the register roles, call convention,
+      clobber rules, and memory map;
+- [ ] `RET,`, `CALLCOMP`, and `TAILCOMP` emit the Seed call and return
+      sequences; the ISA's native return is not used;
+- [ ] the quotation opener, closer, and branch field sizes match the
+      geometry constants;
+- [ ] the failure-frame slot order matches `HANDLE`, `CUT`, and
+      `}~FAIL`;
+- [ ] host and target definitions of the same name are understood;
+- [ ] a runtime probe covers the changed behavior;
+- [ ] the z80 image stays below `STK_BOT` and the stacks do not meet;
 - [ ] comments explain invariants and portability constraints.
+
+## Reviewing a change
+
+- Which pass does the changed word belong to, host or target?
+- Does the change alter any emitted byte? If yes, rebuild the
+  committed bootstrap in the same series and run the cross matrix.
+- Does it use a named geometry constant instead of a repeated size?
+- Does it preserve the ABI and clobber contract?
+- Does it touch a failure frame, a quotation, or a branch? Re-read the
+  corresponding section above.
+- Is there a probe that would fail if the change regresses?
