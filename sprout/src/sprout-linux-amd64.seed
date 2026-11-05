@@ -108,6 +108,12 @@ xcall_size constant xquote_open_size
 xliteral_size xret_size + constant xstub_size
 4 constant xrel_size
 
+\ failure frame slots, from ERR_SP up
+0 constant xframe_handler
+xcell constant xframe_prev_handler
+xcell 2 * constant xframe_prev_err_sp
+xcell 3 * constant xframe_saved_dsp
+
 \ Auxiliary functions for the Assembler
 
 \ execute n times
@@ -1699,7 +1705,7 @@ rdx FAIL mov_rr,aa
 rdx push		\ save failure handler pointer
 rdx rcx	mov_[rr],rr	\ set new handler
 ERR_SP rsp mov_[aa],rr	\ set new ERR_SP
-rcx 3 xcells mov_rr,x	\ frame offset
+rcx xframe_saved_dsp mov_rr,x	\ frame offset
 rcx rsp add_rr,rr	\ add stack pointer
 3 label!
 rcx push
@@ -2747,7 +2753,7 @@ FAIL rcx mov_[aa],rr	\ initialize failure handler
 rbx rax mov_[rr],rr	\ save TOS
 rbx push		\ save data stack ptr.
 rcx rsp mov_rr,rr	\ return stack ptr. to rcx
-rcx 3 xcells sub_rr,s	\ bottom of handler frame
+rcx xframe_saved_dsp sub_rr,s	\ bottom of handler frame
 rcx push		\ circular reference
 rcx 6 label mov_rr,aa	\ this handler's address
 rcx push		\ circular reference
