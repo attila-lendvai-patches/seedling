@@ -51,17 +51,17 @@ input and output channel; there is no ELF segment.
 
 ## Source shape
 
-A Seed source starts with `output` on the first line. The usual order is:
+A Seed source starts with `OUTPUT` on the first line. The usual order is:
 
 1. requirements, assembler scope, TOS/register roles;
 2. `[port]` image base and target geometry;
-3. Part I: host-side assembler macros (`w,`, `d,`, `a,`, opcode
+3. Part I: host-side assembler macros (`W,`, `D,`, `A,`, opcode
    emitters, labels, calls, literals);
-4. the cross-compiler (`xcompile`, `xcomps`, `xcreate`, `x'`, `does`);
-5. `create ELF`, the ELF header, and the initial machine code;
-6. Part II: target-side words (`literal`, `{{`, `}}`, `ret,`,
-   `create`, the seed loop);
-7. the final `output` path.
+4. the cross-compiler (`XCOMPILE`, `XCOMPS`, `XCREATE`, `X'`, `DOES`);
+5. `CREATE ELF`, the ELF header, and the initial machine code;
+6. Part II: target-side words (`LITERAL`, `{{`, `}}`, `RET,`,
+   `CREATE`, the seed loop);
+7. the final `OUTPUT` path.
 
 Part I runs while the source is being compiled. Part II is the target
 program that will compile the next generation. Do not use a target word
@@ -135,8 +135,8 @@ xliteral_size xret_size + constant xstub_size
 4 constant xrel_size
 ```
 
-`xcell` is the target cell size in bytes. `xalign` aligns an address
-to a target cell. `xcode_align_bytes` is the *instruction* boundary,
+`XCELL` is the target cell size in bytes. `XALIGN` aligns an address
+to a target cell. `XCODE_ALIGN_BYTES` is the *instruction* boundary,
 which may be different from the cell size.
 
 ### Compile-time substitution
@@ -149,18 +149,18 @@ evaluate it while compiling and emit it as a target literal:
 here [ xstub_size xliteral ] +
 ```
 
-The bracket runs at compile time and `xliteral` emits the same bytes as
+The bracket runs at compile time and `XLITERAL` emits the same bytes as
 a numeric literal. The image does not grow, and the source names the
 invariant instead of repeating a number. Prefer this to a target-side
 constant word, which would add a runtime dictionary entry and image
 bytes.
 
 `[` is a target word and must be defined before the words that use it.
-The interpreter is therefore defined before `create`. The quotation
+The interpreter is therefore defined before `CREATE`. The quotation
 emitters `{{` and `}}` still precede `[`, so their size literals stay
-numeric with a comment naming `xquote_open_size` or `xrel_size`. Do not
+numeric with a comment naming `XQUOTE_OPEN_SIZE` or `XREL_SIZE`. Do not
 move the interpreter above the quotations: it uses `"`, which uses
-`quotate`, which uses `{{`; moving the target number parser that far
+`QUOTATE`, which uses `{{`; moving the target number parser that far
 also shadows the host parser used for literals.
 
 The other bracket user is the target `LINK` alignment. It has only
@@ -184,7 +184,7 @@ remains the host `XALIGN` mask; do not inject it into target code.
 ### Code alignment
 
 Where instructions need alignment, do not repeat the size in the
-target words. Emit `xcode_align_bytes` as a target constant and derive
+target words. Emit `XCODE_ALIGN_BYTES` as a target constant and derive
 the two target-side words from it:
 
 ```forth
@@ -200,19 +200,19 @@ xcode_align_bytes 1- invert and }
 here xcode_align_addr here - allot }
 ```
 
-`xcode_align_addr` aligns an address. `xcode_align` aligns the code
-pointer (`here`). Both are target-side words. The host constant and the
-target word share the name `xcode_align_bytes`; `native` emits a target
+`XCODE_ALIGN_ADDR` aligns an address. `XCODE_ALIGN` aligns the code
+pointer (`HERE`). Both are target-side words. The host constant and the
+target word share the name `XCODE_ALIGN_BYTES`; `NATIVE` emits a target
 word that pushes the same value. The host itself uses
-`xcode_align_bytes align`.
+`XCODE_ALIGN_BYTES ALIGN`.
 
 The z80 has threaded code and byte-aligned code, so it has no
-instruction alignment and no `xcode_align_bytes`. Do not force x86-style
+instruction alignment and no `XCODE_ALIGN_BYTES`. Do not force x86-style
 link/token/comp cells onto it.
 
 ### Word entry layout
 
-For a conventional port, `current` points at the link cell:
+For a conventional port, `CURRENT` points at the link cell:
 
 ```
 +0              link
@@ -222,10 +222,10 @@ For a conventional port, `current` points at the link cell:
 code ...        aligned to xcode_align_bytes
 ```
 
-`xword_comp` is the offset of the compile-mode field.
-`xname_from_token` is the offset of the name from the token field.
-The z80 uses a different, threaded layout; keep its `xword_name` and
-`xrel_size` local.
+`XWORD_COMP` is the offset of the compile-mode field.
+`XNAME_FROM_TOKEN` is the offset of the name from the token field.
+The z80 uses a different, threaded layout; keep its `XWORD_NAME` and
+`XREL_SIZE` local.
 
 ## Target ABI and call convention
 
@@ -316,19 +316,19 @@ x' d! call
 ret
 ```
 
-`x32,` expects `( low16 high16 -- )`, with the high half on top of the
+`X32,` expects `( low16 high16 -- )`, with the high half on top of the
 data stack. Getting this order wrong byte-swaps every instruction.
 
 For addresses, keep only the low 16 bits in the host and let
-`ximage_base_hi` supply the rest:
+`XIMAGE_BASE_HI` supply the rest:
 
 ```forth
 1 constant ximage_base_hi
 {: a,   w, ximage_base_hi w, 0 d, }      \ 64-bit target address
 ```
 
-On i386, `a,` is 4 bytes (`w, ximage_base_hi w,`). On a raw-binary
-target such as the z80, there is no `a,`.
+On i386, `A,` is 4 bytes (`W, XIMAGE_BASE_HI W,`). On a raw-binary
+target such as the z80, there is no `A,`.
 
 ### Split fields that cross bit 15
 
@@ -362,13 +362,13 @@ x32,
 ```
 
 A 16-bit host cannot hold the 32-bit intermediate. Compute the halves
-separately, as the AArch64 `shl_rr,s`/`shr_rr,s` do, rather than
+separately, as the AArch64 `SHL_RR,S`/`SHR_RR,S` do, rather than
 shifting a value that already overflowed the host cell.
 
 ### Target computation is not host computation
 
 Code emitted by a literal or an assembler macro runs on the target at
-runtime, where cells may be 64-bit. A logical `rshift` of a negative
+runtime, where cells may be 64-bit. A logical `RSHIFT` of a negative
 target value still leaves ones in the high bits, which is what the
 branch decoder needs. The host only has to emit the literals; it does
 not evaluate that computation. The exception is anything the host
@@ -377,7 +377,7 @@ layout) — keep those 16-bit-safe.
 
 ## Addressing and tokens
 
-`here` is the host emission pointer. `$` is the target offset:
+`HERE` is the host emission pointer. `$` is the target offset:
 
 ```forth
 0 variable offset
@@ -385,22 +385,22 @@ layout) — keep those 16-bit-safe.
 {: org   here swap - offset ! }
 ```
 
-`0 org` records the host address that corresponds to target address 0.
-After that, `$` is the target offset and `here - offset` recovers the
+`0 ORG` records the host address that corresponds to target address 0.
+After that, `$` is the target offset and `HERE - OFFSET` recovers the
 host address.
 
 A target token is usually the target code address. In the AArch64 port
 the entry stores only the low 16 bits of the token; the high half is
-always `ximage_base_hi`. This is why:
+always `XIMAGE_BASE_HI`. This is why:
 
-- `w@`/`w!` are 16-bit;
-- `x'` returns the low half;
-- `does` overwrites only the low half of the compile field;
-- `a,` writes the full address when a full address is needed.
+- `W@`/`W!` are 16-bit;
+- `X'` returns the low half;
+- `DOES` overwrites only the low half of the compile field;
+- `A,` writes the full address when a full address is needed.
 
 Do not mix host heap addresses and target image addresses. The image is
 built in the host heap and dumped as target bytes; the two are related
-only through `offset`.
+only through `OFFSET`.
 
 ## Branch displacements
 
@@ -429,8 +429,8 @@ unless that tradeoff changes.
 ## Cross-compilation
 
 The compile-mode behavior of a target word cannot be executed on the
-host. The AArch64 port keeps a small association list (`xcomps`) of
-host-side compile behaviors and uses `xcompile` for the default case:
+host. The AArch64 port keeps a small association list (`XCOMPS`) of
+host-side compile behaviors and uses `XCOMPILE` for the default case:
 
 ```forth
 {: xcompile
@@ -452,12 +452,12 @@ Key consequences:
 
 - A target word must exist in the target vocabulary before a target
   definition that calls it. A forward reference fails compilation.
-- The default compile behavior emits a call (`callcomp`). Words whose
-  compile behavior differs (for example `}`, `}~`, `}~fail`, `}~self`,
-  `}~|`, `[`, `{`, `"`, `\`, `(`) are listed in `xcomps`.
-- `literal` emits a target literal; `{{`/`}}` emit a quotation and
-  patch its branch; `ret,` emits a return.
-- `x'` is target tick; `'` is host tick. `does` writes a compile
+- The default compile behavior emits a call (`CALLCOMP`). Words whose
+  compile behavior differs (for example `}`, `}~`, `}~FAIL`, `}~SELF`,
+  `}~|`, `[`, `{`, `"`, `\`, `(`) are listed in `XCOMPS`.
+- `LITERAL` emits a target literal; `{{`/`}}` emit a quotation and
+  patch its branch; `RET,` emits a return.
+- `X'` is target tick; `'` is host tick. `DOES` writes a compile
   behavior into the last target word.
 - If a whole target definition is truncated at a word that is not in
   the target vocabulary yet, check the definition order first.
@@ -472,11 +472,11 @@ a target pointer used as the lookup key.
 
 Known traps from this port:
 
-- `}~self` used `*` before `*` was defined in the target vocabulary.
+- `}~SELF` used `*` before `*` was defined in the target vocabulary.
   The failure looked arithmetic but was a lookup failure.
-- `x32,` combined the halves in the wrong order, so instructions were
+- `X32,` combined the halves in the wrong order, so instructions were
   emitted byte-swapped.
-- `shl`/`shr` put `immr` in bits 16..21, where a 16-bit `x32,` silently
+- `shl`/`shr` put `immr` in bits 16..21, where a 16-bit `X32,` silently
   dropped it.
 
 ## Quotations
@@ -538,11 +538,11 @@ saved-pointer convention are part of the port's ABI.
 
 ## Postponed definitions
 
-`postpone` creates the entry and reserves a forward jump. `{::` finds
+`POSTPONE` creates the entry and reserves a forward jump. `{::` finds
 the entry, patches that jump to the body it is about to compile, and
 leaves the token on the patched jump. Emit the placeholder with the
 target's jump width and patch only the branch field; do not write a
-whole host cell over it. `link` aligns the next entry, so `postpone`
+whole host cell over it. `LINK` aligns the next entry, so `POSTPONE`
 needs no extra padding. Mark the patched instruction for an icache
 sync where the target requires it.
 
@@ -560,7 +560,7 @@ Sprouts keep section headers. The current valid layout is:
 Seeds may omit section headers entirely; `eu-elflint` still validates
 the ELF and program headers.
 
-Section virtual addresses use `ximage_base_hi`, like the rest of the
+Section virtual addresses use `XIMAGE_BASE_HI`, like the rest of the
 emitter. Validate with `eu-elflint -q`; `readelf` is too permissive to
 be the test.
 
@@ -624,15 +624,15 @@ rm -rf tools-for-build/build && bash tools-for-build/ci-linux.sh --all
 - A wide source literal listed by the yellow literal check: review it,
   but do not split it merely to silence the check.
 - A 32-bit intermediate that overflows before it is split.
-- `x32,` argument order: high half on top.
+- `X32,` argument order: high half on top.
 - An `immr`/`imm12`/`imm26` field that extends past bit 15.
 - A target word used before it is defined in the target vocabulary.
 - A stale `seed/bin/seed-linux-amd64`.
-- Host heap addresses leaking into target addresses, or `$`/`here`
+- Host heap addresses leaking into target addresses, or `$`/`HERE`
   mixed up.
 - Repeating the instruction alignment size instead of using
-  `xcode_align_bytes`/`xcode_align`.
-- `rshift` on a negative host value when the intent was a target-side
+  `XCODE_ALIGN_BYTES`/`XCODE_ALIGN`.
+- `RSHIFT` on a negative host value when the intent was a target-side
   sign-preserving shift.
 - Forgetting to update the cross matrix in `test-common.sh`.
 - Using the ISA's native return instead of `RET,`; on AArch64 `RET`
@@ -655,7 +655,7 @@ rm -rf tools-for-build/build && bash tools-for-build/ci-linux.sh --all
 - [ ] z80 -> new port matches the amd64-built image;
 - [ ] every emitted ELF passes `eu-elflint -q`;
 - [ ] geometry block describes the target, not the host;
-- [ ] `xcode_align_bytes` is the only place the instruction alignment
+- [ ] `XCODE_ALIGN_BYTES` is the only place the instruction alignment
       is written down;
 - [ ] word entry layout and token/target-address conventions are
       documented in the source;
