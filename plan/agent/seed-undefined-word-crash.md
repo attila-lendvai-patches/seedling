@@ -95,9 +95,9 @@ confirming that the input pointer was left mid-word.
   `[ TIB_BUF xliteral ] [ TIB_BUF_LEN xliteral ] + tib !`.
   This self-hosts byte-identically (gen1/gen2 match), but does not fix
   the `}}` crash because `d!` executes before `{:` returns.
-- Startup failure-frame fix (saved DSP at +3 instead of +6): does not
-  affect this crash, though the gap still looks like a separate latent
-  bug.
+- Startup failure-frame layout: rechecked. The saved DSP is at
+  `ERR_SP + 3`; the `push` instructions use `rsp`, so the `3 xcells`
+  subtraction correctly yields the frame base. There is no gap.
 
 ## Next step
 
