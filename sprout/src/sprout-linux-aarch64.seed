@@ -95,6 +95,7 @@ xcell1- invert constant xcell_mask      \ FFF8
 4 constant xinst_size
 xcell 2 * constant xword_comp
 xcell 2 * constant xname_from_token
+xname_from_token xcell + constant xword_name
 10 constant xcall_size
 xcall_size constant xquote_open_size
 18 constant xliteral_size
@@ -3287,7 +3288,7 @@ create }~ ,
 {: redefine
 last
 \ name = entry + xword_name
-cell+ cell+ cell+ skipstr
+[ xword_name xliteral ] + skipstr
 xcode_align_addr
 dp }~ !
 

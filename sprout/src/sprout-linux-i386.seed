@@ -100,6 +100,7 @@ xcell1- invert constant xcell_mask      \ FFFC
 
 xcell 2 * constant xword_comp
 xcell 2 * constant xname_from_token
+xname_from_token xcell + constant xword_name
 5 constant xcall_size
 xcall_size constant xquote_open_size
 5 constant xjump_size
@@ -2464,7 +2465,7 @@ create }~ ,
 {: redefine
 last
 \ name = entry + xword_name
-cell+ cell+ cell+ skipstr
+[ xword_name xliteral ] + skipstr
 dp }~ !
 
 \ create constant
