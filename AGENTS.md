@@ -70,6 +70,18 @@ Add checks to `tools-for-build/test-common.sh`; CI only calls the
 scripts above. `tools-for-build/build/` and `tools-for-build/z80sim/`
 are not committed.
 
+## Planning notes
+
+Agent plans, investigations, and TODOs for this tree live in
+`plan/agent/`, next to the code they describe. They are scratch notes:
+not part of the build and not committed. Keep one focused file per task
+and index the open items from `plan/agent/TODO.md`.
+
+Some harnesses force Plan-mode writes into `~/.opencode/plan`. That
+directory is outside the tree and is not this repository's convention.
+If a plan starts there, move it to `plan/agent/` once the restriction
+is lifted; do not leave the only copy outside the tree.
+
 ## Invariants to re-establish after every change
 
 1. **Self-host fixpoint**: a port compiling its own source reproduces
