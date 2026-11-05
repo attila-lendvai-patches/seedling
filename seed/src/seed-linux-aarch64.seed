@@ -999,6 +999,13 @@ PAD_LEN + dup constant TIB_BUF     \ line edit buffer
 TIB_BUF_LEN + xalign
               constant EFFECTS
 
+\ effect table slots
+0 constant effect_emit
+xcell constant effect_write
+xcell 2 * constant effect_key
+xcell 3 * constant effect_input
+xcell 4 * constant effect_ok
+
 \ effect pointer for cross-compiling
 EFFECTS variable effects
 
@@ -2551,15 +2558,15 @@ ERR_SP mov_[aa],SP	\ set ERR_SP
 
 \ initialize effects
 X3 x' stdemit mov_rr,aa
-EFFECTS X3 mov_[aa],rr
+EFFECTS effect_emit + X3 mov_[aa],rr
 X3 x' stdwrite mov_rr,aa
-EFFECTS 8 + X3 mov_[aa],rr
+EFFECTS effect_write + X3 mov_[aa],rr
 X3 x' stdkey mov_rr,aa
-EFFECTS 10 + X3 mov_[aa],rr
+EFFECTS effect_key + X3 mov_[aa],rr
 X3 x' stdinput mov_rr,aa
-EFFECTS 18 + X3 mov_[aa],rr
+EFFECTS effect_input + X3 mov_[aa],rr
 X3 x' stdok mov_rr,aa
-EFFECTS 20 + X3 mov_[aa],rr
+EFFECTS effect_ok + X3 mov_[aa],rr
 
 \ execute seed loop
 x' seedl jmp

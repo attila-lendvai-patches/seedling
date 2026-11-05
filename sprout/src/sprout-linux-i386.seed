@@ -736,6 +736,12 @@ PAD_LEN + dup constant TIB_BUF     \ line edit buffer
 TIB_BUF_LEN + xalign
               constant EFFECTS
 
+\ effect table slots
+0 constant effect_write
+xcell constant effect_key
+xcell 2 * constant effect_input
+xcell 4 * constant effect_error
+
 \ effect pointer for cross-compiling
 EFFECTS variable effects
 
@@ -2805,14 +2811,14 @@ ERR_SP esp mov_[aa],rr	\ set ERR_SP
 
 \ initialize effects
 ecx x' stdwrite mov_rr,aa
-EFFECTS ecx mov_[aa],rr
+EFFECTS effect_write + ecx mov_[aa],rr
 ecx x' stdkey mov_rr,aa
-EFFECTS 4 + ecx mov_[aa],rr
+EFFECTS effect_key + ecx mov_[aa],rr
 ecx x' stdinput mov_rr,aa
-EFFECTS 8 + ecx mov_[aa],rr
+EFFECTS effect_input + ecx mov_[aa],rr
 \ division by zero exception
 ecx x' stderrok mov_rr,aa
-EFFECTS 10 + ecx mov_[aa],rr
+EFFECTS effect_error + ecx mov_[aa],rr
 
 \ check arguments
 ecx 10 mov_rr,x
