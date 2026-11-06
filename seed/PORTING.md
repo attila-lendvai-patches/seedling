@@ -402,6 +402,39 @@ Do not mix host heap addresses and target image addresses. The image is
 built in the host heap and dumped as target bytes; the two are related
 only through `OFFSET`.
 
+### Addresses outside the image page
+
+`XIMAGE_BASE_HI` covers only the image's 64 KiB page. A port that
+pins a fixed heap outside that page must name the high half of every
+fixed boundary above it. The AArch64 port does this because its
+`B`/`BL` range is ±128 MiB: a `brk` heap could end up arbitrarily far
+from the image, so the port pins the JIT heap at `200000..400000` to
+keep generated code reachable. That puts the data stack
+(`200000..210000`), the dictionary base (`210000`), and the heap end
+(`400000`) above the image page; their high halves are `20`, `21`,
+and `40`, not `XIMAGE_BASE_HI`. The AArch64 Sprout also names the
+image-page high halves, but only so its compile-time guard can check
+that they equal `XIMAGE_BASE_HI`.
+
+Keep each low/high pair together, for example with a two-name helper
+that writes the high half first:
+
+```forth
+\ hi lo -- ; NAME_HI gets hi, NAME gets lo
+{: 2constants ( hi lo -( heap )- )
+  swap constant constant }
+
+20 0000 2constants STACK_BOT_HI STACK_BOT
+21 0000 2constants DICTIONARY_BASE_HI DICTIONARY_BASE
+40 0000 2constants IMAGE_END_HI IMAGE_END
+```
+
+The amd64 and i386 Sprouts do not need this. Their compile-time map
+(image, system variables, `.bss`, and data stack) fits in the image
+page, and the dictionary base comes from `brk` at runtime, so no fixed
+address above the page is named. Their `call`/`jmp` rel32 range is
+±2 GiB, so a `brk` heap stays reachable.
+
 ## Branch displacements
 
 A relative branch has two independent facts: the width of the field
