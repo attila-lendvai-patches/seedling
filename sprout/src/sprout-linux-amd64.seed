@@ -56,6 +56,7 @@ hex
 \ effect slots and grows up toward the heap; the return stack
 \ and process stack are RSP. Keep the data stack below the heap
 \ base.
+8000 constant BSS_SIZE
 
 \ [port] TARGET GEOMETRY
 \ Values describe the target, not the compiling Sprout. Offsets
@@ -735,6 +736,12 @@ xcell constant effect_key
 xcell 2 * constant effect_input
 xcell 4 * constant effect_error
 
+\ The system variables and effect slots must fit in the .bss.
+{
+EFFECTS effect_error + xcell + SPROUT - BSS_SIZE u<
+}
+{ " layout overlap" abort } |
+
 \ effect pointer for cross-compiling
 EFFECTS variable effects
 
@@ -980,7 +987,7 @@ f_BssOffset field
 0 q,
 
 \ Section size
-8000 q,
+BSS_SIZE q,
 
 \ Linked section index
 0 d,

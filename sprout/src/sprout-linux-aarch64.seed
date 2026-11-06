@@ -39,17 +39,34 @@ hex
 
 \ [port] IMAGE BASE
 \ Image base: ximage_base_hi:low16(offset). The image must stay
-\ below 18000 (the system variables), and no host value is wider
+\ below 1B000 (the system variables), and no host value is wider
 \ than 16 bits.
 1 constant ximage_base_hi
 
 \ [port] MEMORY MAP
-\ The loaded segment ends at 400000.
+\ The loaded segment ends at 400000. Keep the regions in this
+\ order; the checks below fail the build if they overlap.
 \   10000   image base
-\   1A000   system variables and .bss start
+\   1B000   system variables and .bss start
+\   1B200   exception slots
+\   1F000   exception slot limit
 \   200000  data stack bottom, 64 KiB
 \   210000  dictionary bottom
 \   400000  heap end and segment end
+
+\ A 16-bit host cannot hold the full address.  Write the high
+\ half first, then the low half: NAME_HI gets the high half,
+\ NAME the low half.
+{: 2constants ( hi lo -( heap )- )
+  swap constant constant }
+
+1 0000 2constants IMAGE_BASE_HI IMAGE_BASE
+1 B000 2constants SPROUT_HI SPROUT
+1 B200 2constants EXCEPTION_BASE_HI EXCEPTION_BASE
+1 F000 2constants EXCEPTION_LIMIT_HI EXCEPTION_LIMIT
+20 0000 2constants STACK_BOT_HI STACK_BOT
+21 0000 2constants DICTIONARY_BASE_HI DICTIONARY_BASE
+40 0000 2constants IMAGE_END_HI IMAGE_END
 
 \ [port] TARGET GEOMETRY (AArch64)
 \ Values describe the target, not the compiling Sprout. Offsets
@@ -1151,7 +1168,7 @@ drop
 
 {: field here swap ! }
 
-1A000  dup    constant SPROUT
+SPROUT dup    constant SEED
 xcell+ dup    constant DP
 xcell+ dup    constant TIB
 xcell+ dup    constant FAIL
@@ -1176,6 +1193,23 @@ TIB_BUF_LEN + xalign
 xcell constant effect_key
 xcell 2 * constant effect_input
 xcell 4 * constant effect_error
+
+\ Layout and page invariants; a false relation aborts.
+{
+IMAGE_BASE_HI ximage_base_hi =
+SPROUT_HI IMAGE_BASE_HI =
+EXCEPTION_BASE_HI IMAGE_BASE_HI =
+EXCEPTION_LIMIT_HI IMAGE_BASE_HI =
+SPROUT EFFECTS u<
+EFFECTS EXCEPTION_BASE u<
+EXCEPTION_BASE EXCEPTION_LIMIT u<
+EXCEPTION_LIMIT_HI STACK_BOT_HI u<
+STACK_BOT_HI DICTIONARY_BASE_HI u<
+STACK_BOT_HI 1 + DICTIONARY_BASE_HI =
+STACK_BOT DICTIONARY_BASE =
+DICTIONARY_BASE_HI IMAGE_END_HI u<
+}
+{ " layout overlap" abort } |
 
 \ effect pointer for cross-compiling
 EFFECTS variable effects
@@ -1359,7 +1393,7 @@ f_SizeInFile field
 0 q,
 
 \ Size in memory; the segment ends at 400000
-0 w, 3F w, 0 d, \ 0x3f0000
+0 w, 3F w, 0 d, \ IMAGE_END IMAGE_BASE -
 
 \ Alignment
 1000 q,
@@ -1415,14 +1449,15 @@ f_TotalFileSize field
 3 q,
 
 \ Virtual address
-A000 w, ximage_base_hi w, 0 d,
+SPROUT a,
 
 \ Offset in the file
 f_BssOffset field
 0 q,
 
 \ Section size; the section ends at 400000
-6000 w, 3E w, 0 d, \ 0x3e6000
+\ .bss size = IMAGE_END SPROUT - = 0x3E5000
+5000 w, 3E w, 0 d,
 
 \ Linked section index
 0 d,
@@ -1450,7 +1485,7 @@ f_BssOffset field
 3 q,
 
 \ Virtual address
-A000 w, ximage_base_hi w, 0 d,
+SPROUT a,
 
 \ Offset in the file
 f_DataOffset field
@@ -3278,8 +3313,8 @@ here 8 + ,
 \ create exception
 {: exception ( x -( heap )- )
 create redefine
-F000 1 10 lshift or @	\ 0x1F000
-dup 8 + F000 1 10 lshift or !
+F000 1 10 lshift or @	\ EXCEPTION_LIMIT
+dup 8 + F000 1 10 lshift or !	\ EXCEPTION_LIMIT
 dup
 [ bye_handler @ xliteral ]
 swap !
@@ -3583,9 +3618,9 @@ X20 mov_from_sp
 X0 A mov_rr,x
 BASE X0 mov_[aa],rl \ initialize numeral base
 X19 0 mov_rr,x
-X19 20 MOVK_r,u16, \ 0x200000, data stack bottom
+X19 STACK_BOT_HI MOVK_r,u16, \ STACK_BOT
 X2 0 mov_rr,x
-X2 21 MOVK_r,u16, \ 0x210000, dictionary
+X2 DICTIONARY_BASE_HI MOVK_r,u16, \ DICTIONARY_BASE
 DP X2 mov_[aa],rr \ initialize dictionary end
 DICTIONARY X2 mov_[aa],rr \ and beginning
 XSYNC_FROM X2 mov_[aa],rr \ no emitted code yet
@@ -3621,16 +3656,16 @@ X3 x' stderrok mov_rr,aa
 EFFECTS effect_error + X3 mov_[aa],rr
 
 \ initialize the user-defined exception slots
-X16 A200 mov_rr,aa
-X17 F000 mov_rr,aa
+X16 EXCEPTION_BASE mov_rr,aa
+X17 EXCEPTION_LIMIT mov_rr,aa
 X3 x' bye mov_rr,aa
 E label!
 X16 X3 mov_[rr],rr
 X16 xcell add_rr,s
 X16 X17 cmp_rr,rr
 E label jb
-X16 F000 mov_rr,aa
-X3 A200 mov_rr,aa
+X16 EXCEPTION_LIMIT mov_rr,aa
+X3 EXCEPTION_BASE mov_rr,aa
 X16 X3 mov_[rr],rr
 
 \ check arguments; X20 points at argc/argv

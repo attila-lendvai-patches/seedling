@@ -522,6 +522,15 @@ PAD_LEN + constant DICTIONARY
 E000 constant STK_BOT
 FF00 constant STK_TOP \ 1F00 bytes for the return stack
 
+\ The dictionary must stay below the stacks; a false relation
+\ aborts.
+{
+DP DICTIONARY u<
+DICTIONARY STK_BOT u<
+STK_BOT STK_TOP u<
+}
+{ " layout overlap" abort } |
+
 \ labels
 7 constant start
 6 constant catch
