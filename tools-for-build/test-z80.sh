@@ -44,13 +44,43 @@ runtime_suite "$BUILD/seed.z80" seed-z80
 z80_run "$BUILD/seed.z80" "$ROOT/seed/src/seed-linux-amd64.seed" "$BUILD/seed.z80-amd64"
 cmp --verbose "$ROOT/seed/bin/seed-linux-amd64" "$BUILD/seed.z80-amd64"
 
+# The generated image must also run: self-bootstrap it.
+if can_execute amd64; then
+    chmod +x "$BUILD/seed.z80-amd64"
+    seed_run "$BUILD/seed.z80-amd64" "$ROOT/seed/src/seed-linux-amd64.seed" \
+        "$BUILD/seed.amd64.by-z80.self"
+    cmp --verbose "$ROOT/seed/bin/seed-linux-amd64" "$BUILD/seed.amd64.by-z80.self"
+else
+    skip_note "z80-built amd64 Seed: $(runner_note amd64)"
+fi
+
 # (z80) Seed cross-compiles to i386
 z80_run "$BUILD/seed.z80" "$ROOT/seed/src/seed-linux-i386.seed" "$BUILD/seed.i386.by-z80"
 cmp --verbose "$ROOT/seed/bin/seed-linux-i386" "$BUILD/seed.i386.by-z80"
 
+# The generated image must also run: self-bootstrap it.
+if can_execute i386; then
+    chmod +x "$BUILD/seed.i386.by-z80"
+    seed_run "$BUILD/seed.i386.by-z80" "$ROOT/seed/src/seed-linux-i386.seed" \
+        "$BUILD/seed.i386.by-z80.self"
+    cmp --verbose "$ROOT/seed/bin/seed-linux-i386" "$BUILD/seed.i386.by-z80.self"
+else
+    skip_note "z80-built i386 Seed: $(runner_note i386)"
+fi
+
 # (z80) Seed cross-compiles to aarch64
 z80_run "$BUILD/seed.z80" "$ROOT/seed/src/seed-linux-aarch64.seed" "$BUILD/seed-aarch64.by-z80"
 cmp --verbose "$ROOT/seed/bin/seed-linux-aarch64" "$BUILD/seed-aarch64.by-z80"
+
+# The generated image must also run: self-bootstrap it.
+if can_execute aarch64; then
+    chmod +x "$BUILD/seed-aarch64.by-z80"
+    seed_run "$BUILD/seed-aarch64.by-z80" "$ROOT/seed/src/seed-linux-aarch64.seed" \
+        "$BUILD/seed-aarch64.by-z80.self"
+    cmp --verbose "$ROOT/seed/bin/seed-linux-aarch64" "$BUILD/seed-aarch64.by-z80.self"
+else
+    skip_note "z80-built aarch64 Seed: $(runner_note aarch64)"
+fi
 
 # Sprout references come from the host suite when it has already built
 # them; build only what is missing or stale.
