@@ -1886,6 +1886,12 @@ A }~ emit
 'id|
 }~ drop
 
+\ print a message and halt
+native abort ( a -- )
+x' s. call
+x' cr call
+halt
+
 \ emit all current words
 {: words ( -( emit )- )
 \ traverse& yields the name directly on z80

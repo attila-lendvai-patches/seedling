@@ -2389,6 +2389,36 @@ A }~ emit
 {: space
 bl }~ emit
 
+\ Print the zero-terminated message to stderr and exit with
+\ code 2. Native and low-level: the high-level output words
+\ write to stdout, and the message needs one sys.write. Scan
+\ to the terminator, write the message with one sys.write,
+\ write the newline with a second one-byte write, and exit.
+native abort ( a -- )
+esi eax mov_rr,rr
+ecx eax mov_rr,rr
+edx edx xor_rr,rr
+1 label!
+eax eax xor_rr,rr
+eax ecx mov_rl,[rr]
+eax 0 cmp_rr,s
+2 jz_fs
+ecx inc_rr
+edx inc_rr
+1 label jmp
+2 rlabel_fs!
+ecx esi mov_rr,rr
+edi 2 mov_rr,x
+sys.write syscall
+eax A mov_rr,x
+EMIT_BUF eax mov_[aa],rl
+ecx EMIT_BUF mov_rr,aa
+edx 1 mov_rr,x
+edi 2 mov_rr,x
+sys.write syscall
+edi 2 mov_rr,x
+sys.exit syscall
+
 \ input using key
 {: keyinput ( -( key tib fail )- )
 [ TIB_BUF xaliteral ] tib !

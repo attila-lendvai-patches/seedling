@@ -1213,91 +1213,18 @@ X5 1 mov_rr,x
 sys.exit syscall
 
 \ Die loudly if a generated call cannot reach its target.
-\ Build the message in PAD; no data addresses are emitted.
-\ Does not return.
+\ The message is emitted inline and jumped over; abort writes
+\ it and exits. Does not return.
 native xcall_overflow
-X1 PAD mov_rr,aa
-X16 63 mov_rr,x
-X1 X16 mov_[rr],rl
-X1 1 add_rr,s
-X16 61 mov_rr,x
-X1 X16 mov_[rr],rl
-X1 1 add_rr,s
-X16 6C mov_rr,x
-X1 X16 mov_[rr],rl
-X1 1 add_rr,s
-X16 6C mov_rr,x
-X1 X16 mov_[rr],rl
-X1 1 add_rr,s
-X16 20 mov_rr,x
-X1 X16 mov_[rr],rl
-X1 1 add_rr,s
-X16 74 mov_rr,x
-X1 X16 mov_[rr],rl
-X1 1 add_rr,s
-X16 61 mov_rr,x
-X1 X16 mov_[rr],rl
-X1 1 add_rr,s
-X16 72 mov_rr,x
-X1 X16 mov_[rr],rl
-X1 1 add_rr,s
-X16 67 mov_rr,x
-X1 X16 mov_[rr],rl
-X1 1 add_rr,s
-X16 65 mov_rr,x
-X1 X16 mov_[rr],rl
-X1 1 add_rr,s
-X16 74 mov_rr,x
-X1 X16 mov_[rr],rl
-X1 1 add_rr,s
-X16 20 mov_rr,x
-X1 X16 mov_[rr],rl
-X1 1 add_rr,s
-X16 6F mov_rr,x
-X1 X16 mov_[rr],rl
-X1 1 add_rr,s
-X16 75 mov_rr,x
-X1 X16 mov_[rr],rl
-X1 1 add_rr,s
-X16 74 mov_rr,x
-X1 X16 mov_[rr],rl
-X1 1 add_rr,s
-X16 20 mov_rr,x
-X1 X16 mov_[rr],rl
-X1 1 add_rr,s
-X16 6F mov_rr,x
-X1 X16 mov_[rr],rl
-X1 1 add_rr,s
-X16 66 mov_rr,x
-X1 X16 mov_[rr],rl
-X1 1 add_rr,s
-X16 20 mov_rr,x
-X1 X16 mov_[rr],rl
-X1 1 add_rr,s
-X16 72 mov_rr,x
-X1 X16 mov_[rr],rl
-X1 1 add_rr,s
-X16 61 mov_rr,x
-X1 X16 mov_[rr],rl
-X1 1 add_rr,s
-X16 6E mov_rr,x
-X1 X16 mov_[rr],rl
-X1 1 add_rr,s
-X16 67 mov_rr,x
-X1 X16 mov_[rr],rl
-X1 1 add_rr,s
-X16 65 mov_rr,x
-X1 X16 mov_[rr],rl
-X1 1 add_rr,s
-X16 0A mov_rr,x
-X1 X16 mov_[rr],rl
-X1 1 add_rr,s
-X1 PAD mov_rr,aa
-X5 2 mov_rr,x
-X2 19 mov_rr,x
-sys.write syscall
-X5 1 mov_rr,x
-sys.exit syscall
+D jmp_f
+C label
+20 c, 63 c, 61 c, 6C c, 6C c, 20 c, 74 c, 61 c,
+72 c, 67 c, 65 c, 74 c, 20 c, 6F c, 75 c, 74 c,
+20 c, 6F c, 66 c, 20 c, 72 c, 61 c, 6E c, 67 c,
+65 c, 0 c, 0 c, 0 c,
+D rlabel
+X0 C lb mov_rr,aa
+F jmp_f
 
 \ ( X0 target, X3 site -- )
 \ Clobbers X16/X17 and PSTATE flags. Jumps to xcall_overflow
@@ -2305,6 +2232,36 @@ A }~ emit
 \ emit space
 {: space
 bl }~ emit
+
+\ Print the zero-terminated message to stderr and exit with
+\ code 2. Native and low-level: the high-level output words
+\ write to stdout, and the message needs one sys.write. Scan
+\ to the terminator, write the message with one sys.write,
+\ write the newline with a second one-byte write, and exit.
+native abort ( a -- )
+\ Patch the forward branch from xcall_overflow.
+F rlabel
+X1 X0 mov_rr,rr
+X2 X2 xor_rr,rr
+X3 X1 mov_rr,rr
+E label
+X4 X3 mov_rl,[rr]
+X4 0 cmp_rr,s
+D jz_fs
+X3 1 add_rr,s
+X2 1 add_rr,s
+E lb jmp
+D rlabel
+X5 2 mov_rr,x
+sys.write syscall
+X0 A mov_rr,x
+EMIT_BUF X0 mov_[aa],rl
+X5 2 mov_rr,x
+X1 EMIT_BUF mov_rr,aa
+X2 1 mov_rr,x
+sys.write syscall
+X5 2 mov_rr,x
+sys.exit syscall
 
 \ emit all context words
 {: words

@@ -1602,6 +1602,35 @@ A }~ emit
 {: space
 bl }~ emit
 
+\ Print the zero-terminated message to stderr and exit with
+\ code 2. Native and low-level: the high-level output words
+\ write to stdout, and the message needs one sys.write. Scan
+\ to the terminator, write the message with one sys.write,
+\ write the newline with a second one-byte write, and exit.
+native abort ( a -- )
+rsi rax mov_rr,rr
+rcx rax mov_rr,rr
+rdx rdx xor_rr,rr
+1 label!
+rax rax xor_rr,rr
+rax rcx mov_rl,[rr]
+rax 0 cmp_rr,s
+2 jz_fs
+rcx inc_rr
+rdx inc_rr
+1 label jmp_s
+2 rlabel_fs!
+rdi 2 mov_rr,x
+sys.write syscall
+rax A mov_rr,x
+EMIT_BUF rax mov_[aa],rl
+rsi EMIT_BUF mov_rr,aa
+rdx 1 mov_rr,x
+rdi 2 mov_rr,x
+sys.write syscall
+rdi 2 mov_rr,x
+sys.exit syscall
+
 \ emit all context words
 {: words
 \ name = token + xname_from_token
