@@ -153,6 +153,9 @@ xcell 3 * constant xframe_saved_dsp
 \ 64-bit virtual address comma
 {: a,		w, ximage_base_hi w, 0 d, }
 
+\ 64-bit value comma, high then low 16-bit half
+{: u64,		w, w, 0 d, }
+
 \ 16-bit little-endian fetch
 {: w@		dup c@ swap 1+ c@ 8 lshift or }
 
@@ -291,7 +294,7 @@ create labels
 \ half of the 0x0001xxxx absolute base address, and store the
 \ location of the lower half to be emitted by our label_f!
 \ counterpart later.
-{: label_f	here swap label_cell ! 0 w, ximage_base_hi w, 0 d, }
+{: label_f	here swap label_cell ! 0 a, }
 
 \ Emit absolute forward label (only the lower 16 bits of it!)
 {: label_f!	label $ swap w! }
@@ -1339,7 +1342,7 @@ B7 w,
 
 f_EntryPoint field
 
-0 w, ximage_base_hi w, 0 d,
+IMAGE_BASE a,
 
 f_ProgramHeaders field
 
@@ -1384,16 +1387,17 @@ $ f_ProgramHeaders @ w!
 0 q,
 
 \ Virtual address 10000
-0 w, ximage_base_hi w, 0 d,
+IMAGE_BASE a,
 
 \ Physical address ???
-0 w, ximage_base_hi w, 0 d,
+IMAGE_BASE a,
 
 f_SizeInFile field
 0 q,
 
 \ Size in memory; the segment ends at 400000
-0 w, 3F w, 0 d, \ IMAGE_END IMAGE_BASE -
+\ p_memsz = IMAGE_END IMAGE_BASE - = 0x3F0000
+3F 0000 u64,
 
 \ Alignment
 1000 q,
@@ -1417,7 +1421,7 @@ $ f_SectionHeaders @ w!
 6 q,
 
 \ Virtual address 10000
-0 w, ximage_base_hi w, 0 d,
+IMAGE_BASE a,
 
 \ Offset in the file
 0 q,
@@ -1457,7 +1461,7 @@ f_BssOffset field
 
 \ Section size; the section ends at 400000
 \ .bss size = IMAGE_END SPROUT - = 0x3E5000
-5000 w, 3E w, 0 d,
+3E 5000 u64,
 
 \ Linked section index
 0 d,
@@ -1516,7 +1520,7 @@ C d,
 0 q,
 
 f_StringTableVA field
-0 w, ximage_base_hi w, 0 d,
+IMAGE_BASE a,
 
 f_StringTableOffset field
 0 q,

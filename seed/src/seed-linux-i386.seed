@@ -44,6 +44,7 @@ hex
 \ their high 16 bits are 1. Keep this a 16-bit-safe literal:
 \ a 16-bit Seed must be able to build this source.
 1 constant ximage_base_hi
+10000 constant IMAGE_BASE
 
 \ [port] MEMORY MAP
 \   10000   image base (.text); the segment ends at 20000
@@ -138,6 +139,9 @@ xcell 3 * constant xframe_saved_dsp
 \ 32-bit virtual address comma
 {: a,		w, ximage_base_hi w, }
 
+\ 32-bit value comma, high then low 16-bit half
+{: u32,		w, w, }
+
 \ 16-bit little-endian fetch
 {: w@		dup c@ swap 1+ c@ 8 lshift or }
 
@@ -219,7 +223,7 @@ create labels
 \ half of the 0x0001xxxx absolute base address, and store the
 \ location of the lower half to be emitted by our label_f!
 \ counterpart later.
-{: label_f	here swap label_cell ! 0 w, ximage_base_hi w, }
+{: label_f	here swap label_cell ! 0 a, }
 
 \ Emit absolute forward label (only the lower 16 bits of it!)
 {: label_f!	label_cell @ $ swap w! }
@@ -706,7 +710,7 @@ create ELF
 \ e_entry: Entry point, lower 16 bits
 f_EntryPoint field
 \ and the remaining 16 bits; the virtual address is 0x001xxxx
-0 w, ximage_base_hi w,
+IMAGE_BASE a,
 
 \ e_phoff: file offset of the program headers
 f_ProgramHeaders field
@@ -749,17 +753,17 @@ $ f_ProgramHeaders @ w!
 0 d,
 
 \ p_vaddr: Virtual address, i.e. 10000
-0 w, ximage_base_hi w,
+IMAGE_BASE a,
 
 \ p_paddr: Physical address (ignored)
-0 w, ximage_base_hi w,
+IMAGE_BASE a,
 
 \ p_filesz: size in file
 f_SizeInFile field
 0 d,
 
 \ p_memsz: size in memory
-0 w, 1 w,
+1 0000 u32,
 
 \ p_flags: program header flags: 7 = read + write + execute
 7 d,

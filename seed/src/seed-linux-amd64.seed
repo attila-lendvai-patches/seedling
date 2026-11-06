@@ -43,6 +43,7 @@ hex
 \ their high 16 bits are 1. Keep this a 16-bit-safe literal:
 \ a 16-bit Seed must be able to build this source.
 1 constant ximage_base_hi
+10000 constant IMAGE_BASE
 
 \ [port] MEMORY MAP
 \   10000   image base (.text); the segment ends at 20000
@@ -136,6 +137,9 @@ xcell 3 * constant xframe_saved_dsp
 
 \ 64-bit virtual address comma
 {: a,		w, ximage_base_hi w, 0 d, }
+
+\ 64-bit value comma, high then low 16-bit half
+{: u64,		w, w, 0 d, }
 
 \ 16-bit little-endian fetch
 {: w@		dup c@ swap 1+ c@ 8 lshift or }
@@ -704,7 +708,7 @@ create ELF
 \ e_entry: Entry point, lower 16 bits
 f_EntryPoint field
 \ and the remaining 48 bits; the virtual address is 0x001xxxx
-0 w, ximage_base_hi w, 0 d,
+IMAGE_BASE a,
 
 \ e_phoff: file offset of the program headers
 f_ProgramHeaders field
@@ -750,17 +754,17 @@ $ f_ProgramHeaders @ w!
 0 q,
 
 \ p_vaddr: Virtual address, i.e. 10000
-0 w, ximage_base_hi w, 0 d,
+IMAGE_BASE a,
 
 \ p_paddr: Physical address (ignored)
-0 w, ximage_base_hi w, 0 d,
+IMAGE_BASE a,
 
 \ p_filesz: size in file
 f_SizeInFile field
 0 q,
 
 \ p_memsz: size in memory
-0 w, 1 w, 0 d,
+1 0000 u64,
 
 \ p_align: alignment
 1000 q,

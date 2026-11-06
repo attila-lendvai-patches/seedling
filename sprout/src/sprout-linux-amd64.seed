@@ -45,6 +45,7 @@ hex
 \ their high 16 bits are 1. Keep this a 16-bit-safe literal:
 \ a 16-bit Seed must be able to build this source.
 1 constant ximage_base_hi
+10000 constant IMAGE_BASE
 
 \ [port] MEMORY MAP
 \   10000   image base (.text)
@@ -141,6 +142,9 @@ xcell 3 * constant xframe_saved_dsp
 
 \ 64-bit virtual address comma
 {: a,		w, ximage_base_hi w, 0 d, }
+
+\ 64-bit value comma, high then low 16-bit half
+{: u64,		w, w, 0 d, }
 
 \ 16-bit little-endian fetch
 {: w@		dup c@ swap 1+ c@ 8 lshift or }
@@ -870,7 +874,7 @@ create ELF
 
 f_EntryPoint field
 
-0 w, ximage_base_hi w, 0 d,
+IMAGE_BASE a,
 
 f_ProgramHeaders field
 
@@ -915,16 +919,16 @@ $ f_ProgramHeaders @ w!
 0 q,
 
 \ Virtual address 10000
-0 w, ximage_base_hi w, 0 d,
+IMAGE_BASE a,
 
 \ Physical address ???
-0 w, ximage_base_hi w, 0 d,
+IMAGE_BASE a,
 
 f_SizeInFile field
 0 q,
 
 \ Size in memory
-0 w, 1 w, 0 d,
+1 0000 u64,
 
 \ Alignment
 1000 q,
@@ -948,7 +952,7 @@ $ f_SectionHeaders @ w!
 6 q,
 
 \ Virtual address 10000
-0 w, ximage_base_hi w, 0 d,
+IMAGE_BASE a,
 
 \ Offset in the file
 0 q,
@@ -980,7 +984,7 @@ f_TotalFileSize field
 3 q,
 
 \ Virtual address
-8000 w, ximage_base_hi w, 0 d,
+SPROUT a,
 
 \ Offset in the file
 f_BssOffset field
@@ -1015,7 +1019,7 @@ BSS_SIZE q,
 3 q,
 
 \ Virtual address
-8000 w, ximage_base_hi w, 0 d,
+SPROUT a,
 
 \ Offset in the file
 f_DataOffset field
@@ -1046,7 +1050,7 @@ C d,
 0 q,
 
 f_StringTableVA field
-0 w, ximage_base_hi w, 0 d,
+IMAGE_BASE a,
 
 f_StringTableOffset field
 0 q,

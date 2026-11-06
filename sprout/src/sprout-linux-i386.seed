@@ -46,6 +46,7 @@ hex
 \ their high 16 bits are 1. Keep this a 16-bit-safe literal:
 \ a 16-bit Seed must be able to build this source.
 1 constant ximage_base_hi
+10000 constant IMAGE_BASE
 
 \ [port] MEMORY MAP
 \   10000   image base (.text)
@@ -142,6 +143,9 @@ xcell 3 * constant xframe_saved_dsp
 
 \ 32-bit virtual address comma
 {: a,		w, ximage_base_hi w, }
+
+\ 32-bit value comma, high then low 16-bit half
+{: u32,		w, w, }
 
 \ 16-bit little-endian fetch
 {: w@		dup c@ swap 1+ c@ 8 lshift or }
@@ -242,7 +246,7 @@ create labels
 \ half of the 0x0001xxxx absolute base address, and store the
 \ location of the lower half to be emitted by our label_f!
 \ counterpart later.
-{: label_f,	here swap label_cell ! 0 w, ximage_base_hi w, }
+{: label_f,	here swap label_cell ! 0 a, }
 
 \ Emit absolute forward label (only the lower 16 bits of it!)
 {: label_f!	label $ swap w! }
@@ -877,7 +881,7 @@ create ELF
 
 \ e_entry
 f_EntryPoint field
-0 w, ximage_base_hi w,
+IMAGE_BASE a,
 
 \ e_phoff
 f_ProgramHeaders field
@@ -921,17 +925,17 @@ $ f_ProgramHeaders @ w!
 0 d,
 
 \ p_vaddr: 10000
-0 w, ximage_base_hi w,
+IMAGE_BASE a,
 
 \ p_paddr
-0 w, ximage_base_hi w,
+IMAGE_BASE a,
 
 \ p_filesz
 f_SizeInFile field
 0 d,
 
 \ p_memsz
-0 w, 1 w,
+1 0000 u32,
 
 \ p_flags: 7 = read + write + execute
 7 d,
@@ -963,7 +967,7 @@ $ f_SectionHeaders @ w!
 6 d,
 
 \ Virtual address 10000
-0 w, 1 w,
+IMAGE_BASE a,
 
 \ Offset in the file
 0 d,
@@ -997,7 +1001,7 @@ f_TotalFileSize field
 3 d,
 
 \ Virtual address
-8000 w, ximage_base_hi w,
+SPROUT a,
 
 \ Offset in the file
 f_BssOffset field
@@ -1032,7 +1036,7 @@ BSS_SIZE d,
 3 d,
 
 \ Virtual address
-8000 w, ximage_base_hi w,
+SPROUT a,
 
 \ Offset in the file
 f_DataOffset field
@@ -1067,7 +1071,7 @@ C d,
 
 \ Virtual address in memory (if loaded).
 f_StringTableVA field
-0 w, 1 w,               \ shouldn't this be 0?
+IMAGE_BASE a,            \ shouldn't this be 0?
 
 f_StringTableOffset field
 0 d,
