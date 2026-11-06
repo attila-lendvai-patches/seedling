@@ -158,11 +158,54 @@ run_target() {
     return 77
 }
 
+# A successful compiler exit is not enough: the Seed prints errors to
+# stdout and still exits 0. Check the output format and make sure it
+# ends below the target's system-variable or stack boundary.
+compiled_output_check() {
+    local src=$1 out=$2 magic size limit
+
+    if [ ! -s "$out" ]; then
+        echo "error: $(rel "$src"): compiler produced no output" >&2
+        return 1
+    fi
+
+    case "$src" in
+        *z80*)
+            if [ "$(head -c 5 "$out" | tr -d '\0')" = " fail" ] ||
+               [ "$(head -c 9 "$out" | tr -d '\0')" = "undefined" ]; then
+                echo "error: $(rel "$src"): compiler printed an error" >&2
+                return 1
+            fi
+            limit=$((0xE000))
+            ;;
+        *)
+            magic=$(head -c 4 "$out" | od -An -tx1 | tr -d ' \n')
+            if [ "$magic" != 7f454c46 ]; then
+                echo "error: $(rel "$src"): compiler did not emit an ELF" >&2
+                return 1
+            fi
+            case "$src" in
+                *sprout-linux-aarch64.seed) limit=$((0xB000)) ;;
+                *) limit=$((0x8000)) ;;
+            esac
+            ;;
+    esac
+
+    size=$(stat -c %s "$out")
+    if [ "$size" -ge "$limit" ]; then
+        echo "error: $(rel "$src"): image is $size bytes, at or above" \
+             "the $limit-byte boundary" >&2
+        return 1
+    fi
+}
+
 seed_run() {
-    local bin=$1 input=$2 output=$3
+    local bin=$1 input=$2 output=$3 status=0
     printf '  %s < %s > %s\n' \
         "$(rel "$bin")" "$(rel "$input")" "$(rel "$output")"
-    run_target "$bin" <"$input" >"$output"
+    run_target "$bin" <"$input" >"$output" || status=$?
+    [ "$status" -eq 0 ] || return "$status"
+    compiled_output_check "$input" "$output"
 }
 
 prepare_build() {
