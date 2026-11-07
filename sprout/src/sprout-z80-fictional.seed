@@ -1067,7 +1067,22 @@ x' cpu w,
 hl ERR_SP ld_rr,(xx)
 a and_r
 sp sbc_hl,rr
-0 jr_nz_f
+0 jr_z_f
+\ The computation left extra frames on the return stack.
+\ Discard them and unwind the previous frame normally.
+hl ERR_SP ld_rr,(xx)
+hl inc_rr
+hl inc_rr
+hl inc_rr
+hl inc_rr
+c (hl) ld_r,r
+hl inc_rr
+b (hl) ld_r,r
+ERR_SP bc ld_(xx),rr
+l c ld_r,r
+h b ld_r,r
+ld_sp,hl
+0 rlabel
 exx
 hl pop
 de pop
@@ -1079,21 +1094,6 @@ ERR_SP ld_(xx),hl
 de pop
 exx
 hl pop
-next
-0 rlabel
-sp add_hl,rr
-hl inc_rr
-hl inc_rr
-hl inc_rr
-hl inc_rr
-c (hl) ld_r,r
-hl inc_rr
-b (hl) ld_r,r
-hl 6 ld_rr,xx
-bc add_hl,rr
-sp sbc_hl,rr
-ex_(sp),hl
-hl 1 lb ld_rr,xx
 next
 
 \ cut handler
