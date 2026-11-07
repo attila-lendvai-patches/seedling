@@ -1,0 +1,6 @@
+output
+hex
+{: ampersand ' drop & 1 2 u< }
+ampersand
+ascii A . cr
+bye

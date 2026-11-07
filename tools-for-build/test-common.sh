@@ -276,6 +276,7 @@ probe_expected() {
         payload.seed) echo 122333444455odd ;;
         string.seed) echo hi ;;
         base.seed) echo 41255 ;;
+        ampersand.seed) echo 41 ;;
         *) echo "" ;;
     esac
 }
