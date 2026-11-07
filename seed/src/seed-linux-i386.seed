@@ -591,6 +591,14 @@ xcell 4 * constant effect_ok
 \ effect pointer for cross-compiling
 EFFECTS variable effects
 
+\ The image end is a target offset. Both terms are multiples
+\ of 10000, so the 16-bit difference stays the offset limit.
+SEED IMAGE_BASE - constant image_limit
+
+{: check_image_size
+$ image_limit u<
+}
+
 \ native word definition
 {: native
 xcreate
@@ -1842,7 +1850,7 @@ x' cr jmp
 {: seedl
 input
 ' interpret
-{ "  fail" s. }~ cr
+{ "  fail" abort }
 |
 }~self
 
@@ -1895,6 +1903,7 @@ x' seedl jmp
 
 $ f_SizeInFile @ w!
 
+check_image_size
 ELF dump
 
 bye

@@ -522,6 +522,13 @@ PAD_LEN + constant DICTIONARY
 E000 constant STK_BOT
 FF00 constant STK_TOP \ 1F00 bytes for the return stack
 
+\ The raw image starts at 0; keep it below the stack bottom.
+STK_BOT constant image_limit
+
+{: check_image_size
+$ image_limit u<
+}
+
 \ The dictionary must stay below the stacks; a false relation
 \ aborts.
 {
@@ -2158,7 +2165,7 @@ does
 {: sproutl
 input
 ' interpret
-{ "  fail" s. }~ cr
+{ "  fail" abort }
 |
 }~self
 
@@ -2220,6 +2227,7 @@ x' definitions w,
 x' }~ w,
 x' sproutl w,
 
+check_image_size
 target dump
 
 bye

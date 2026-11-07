@@ -749,6 +749,14 @@ EFFECTS effect_error + xcell + SPROUT - BSS_SIZE u<
 \ effect pointer for cross-compiling
 EFFECTS variable effects
 
+\ The image end is a target offset. Both terms are multiples
+\ of 10000, so the 16-bit difference stays the offset limit.
+SPROUT IMAGE_BASE - constant image_limit
+
+{: check_image_size
+$ image_limit u<
+}
+
 \ native word definition
 {: native
 xcreate
@@ -2751,7 +2759,7 @@ x' cr jmp
 {
 { _input
   { interpret ok }
-  { { "  fail" s. }~ cr }~ stderr
+  { { "  fail" abort } }~ stderr
 }~|
 { { " division by 0" s. }~ cr }~ stderr
 ' 0/  catch
@@ -2852,6 +2860,7 @@ f_StringTableOffset @ w!
 
 $ f_TotalFileSize @ w!
 
+check_image_size
 ELF dump
 
 bye
