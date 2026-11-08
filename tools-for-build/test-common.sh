@@ -172,6 +172,7 @@ compiled_output_check() {
     case "$src" in
         *z80*)
             if [ "$(head -c 5 "$out" | tr -d '\0')" = " fail" ] ||
+               [ "$(head -c 16 "$out" | tr -d '\0')" = " image too large" ] ||
                [ "$(head -c 9 "$out" | tr -d '\0')" = "undefined" ]; then
                 echo "error: $(rel "$src"): compiler printed an error" >&2
                 return 1
@@ -387,6 +388,59 @@ source_literal_check() {
     fi
     rm -f "$findings"
     return 0
+}
+
+undefined_word_check() {
+    echo "==> undefined word in a compile-mode definition"
+    local seed="$BUILD/seed-undefined"
+    local bad="$BUILD/undefined.seed"
+    local out="$BUILD/undefined.out"
+    local err="$BUILD/undefined.err"
+    local status=0 count
+
+    if ! can_execute amd64; then
+        skip_note "undefined-word check: $(runner_note amd64)"
+        return 0
+    fi
+
+    seed_run "$BOOTSTRAP" "$ROOT/seed/src/seed-linux-amd64.seed" "$seed"
+    chmod +x "$seed"
+
+    sed '0,/swap 4 - d!/s//swap nosuchword - d!/' \
+        "$ROOT/seed/src/seed-linux-amd64.seed" >"$bad"
+    if ! grep -q nosuchword "$bad"; then
+        echo "error: could not make the undefined-word fixture" >&2
+        return 1
+    fi
+
+    run_target "$seed" <"$bad" >"$out" 2>"$err" || status=$?
+    if [ "$status" -eq 77 ]; then
+        skip_note "undefined-word check: $(runner_note amd64)"
+        return 0
+    fi
+    if [ "$status" -ge 128 ]; then
+        echo "error: compiler died from signal $((status - 128))" \
+             "on an undefined word" >&2
+        return 1
+    fi
+    if [ "$status" -ne 2 ]; then
+        echo "error: expected exit 2 for an undefined word, got $status" >&2
+        return 1
+    fi
+    if [ "$(head -c 4 "$out" | od -An -tx1 | tr -d ' \n')" = 7f454c46 ]; then
+        echo "error: compiler emitted an ELF after an undefined word" >&2
+        return 1
+    fi
+    if ! grep -q nosuchword "$out" "$err"; then
+        echo "error: undefined word not named in the diagnostic" >&2
+        return 1
+    fi
+    count=$(cat "$out" "$err" | grep -o undefined | wc -l)
+    if [ "$count" -ne 1 ]; then
+        echo "error: expected one undefined diagnostic, got $count" >&2
+        return 1
+    fi
+    echo "    undefined word reported once, exit 2"
 }
 
 committed_binary_check() {

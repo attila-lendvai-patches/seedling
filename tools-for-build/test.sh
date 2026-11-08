@@ -96,6 +96,7 @@ BOOTSTRAP=$(bootstrap_for_host)
 run "source line check" source_line_check
 run "source literal check" source_literal_check
 run "committed binaries" committed_binary_check
+run "undefined word" undefined_word_check
 export TEST_CHECKS_DONE=1
 
 run "host suite ($host)" bash "$TOOLS/test-$host.sh"
