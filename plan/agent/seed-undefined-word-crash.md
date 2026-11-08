@@ -1,8 +1,9 @@
 # Seed: undefined word in compile mode segfaults
 
-Status: open. Investigation done, fix not implemented.
+Status: open. Investigation done; fix not implemented. Use `abort`
+for fatal reporting; `EXIT_CODE` was rolled back.
 
-Date: 2026-11-05.
+Date: 2026-11-08.
 
 ## Symptom
 
@@ -12,7 +13,7 @@ compile-mode behavior: a bad word in `}}` crashes, while a bad word in
 `literal`, `{{`, or `stdok` is reported as ` fail` and compilation
 continues.
 
-The Sprout reports the same kind of error cleanly and exits 0:
+The Sprout reports the same kind of error cleanly:
 
 ```
 xrel_size undefined
@@ -95,20 +96,31 @@ confirming that the input pointer was left mid-word.
   `[ TIB_BUF xliteral ] [ TIB_BUF_LEN xliteral ] + tib !`.
   This self-hosts byte-identically (gen1/gen2 match), but does not fix
   the `}}` crash because `d!` executes before `{:` returns.
-- Startup failure-frame layout: rechecked. The saved DSP is at
-  `ERR_SP + 3`; the `push` instructions use `rsp`, so the `3 xcells`
-  subtraction correctly yields the frame base. There is no gap.
+- Startup failure-frame layout: checked and correct. The saved DSP is
+  at `ERR_SP + 3`; `push` uses `rsp`, so the subtraction yields the
+  frame base. This is not the cause.
+
+## Current state
+
+- `abort` exists in every port and exits with code 2. `seedl` already
+  calls it on a failed line; `interpret`'s undefined-word path still
+  calls `bye`.
+- Oversized-image guards are in place, and the test harness now checks
+  compiler output size and format.
+- z80-built amd64/i386/aarch64 Seed images are executed for a
+  self-bootstrap, not only compared.
+- `EXIT_CODE` was rolled back; do not reintroduce it.
 
 ## Next step
 
 Fix at the `interpret`/`compile` boundary rather than inside `{:`:
 
 - distinguish a compile-mode failure from the normal `}` terminator;
-- on a real failure, either discard the remainder of the definition
-  (resync to its closing `}`) or abort the compilation cleanly;
+- on a real failure, report it with `abort` (exit 2) and either discard
+  the remainder of the definition (resync to its closing `}`) or abort
+  the compilation immediately;
 - keep the Part I host-macro path working;
-- preferably make the diagnostic include `undefined`, matching the
-  Sprout.
+- make the diagnostic include the failing word where possible.
 
 Possible mechanism: a flag/variable set by `{:` on a non-terminator
 failure, checked by `interpret`, or a resync loop in `interpret` that
@@ -120,14 +132,16 @@ consumes tokens through the definition's closing `}`.
   generations.
 - All eight Seed/Sprout sources must still compile byte-identically
   (except for the intended compiler change and rebuilt bootstraps).
-- z80 roots must still match.
+- z80 roots must still match; the z80-built images are now executed as
+  well as compared.
 - Rebuild every committed `seed/bin/seed-*` in the same series.
-- The generated bad source must print an error and exit without a
-  signal, and must not emit a truncated ELF.
+- Keep the harness output size/format check passing.
+- The generated bad source must print an error, exit 2 via `abort`, and
+  must not emit a truncated ELF or die from a signal.
 
 ## Open question
 
 Is a clean abort acceptable for the Seed, or must it continue after an
-undefined word like the Sprout? The Seed's interpret-mode path already
-prints `undefined` and calls `bye`, so aborting is consistent with the
-Seed's existing behaviour and simpler.
+undefined word like the Sprout? The Seed's `seedl` already aborts on a
+failed line, so aborting is consistent with the current Seed behaviour
+and simpler.
