@@ -2108,7 +2108,7 @@ E8 c, 0 }~ d,
 dup here swap - swap 4 - d!
 89 c, 03 c,
 83 c, C3 c, 4 c,
-58 }~ c,
+58 }~ c, \ pop eax: continuation -> top of stack
 
 \ self references
 

@@ -2037,6 +2037,8 @@ x32,
 \ patch the B at token - xinst_size.  xinst_size is 4 and 2 is
 \ log2(xinst_size); the bracket cannot be used here for the
 \ same reason as {{, so keep 4 and 2 in sync with xinst_size.
+\ The last instruction is ldr x0,[x29],#8: it pops the
+\ quotation continuation into TOS.
 {: }}
 xcode_align
 dup here swap - 4 + 2 rshift
