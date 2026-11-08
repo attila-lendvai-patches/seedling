@@ -59,32 +59,32 @@ hex
 \ Values describe the target, not the compiling Seed. Offsets
 \ are in target bytes; the host may have a different cell size.
 \
-\   xcell_bits  target cell size in bits
-\   xcelllog    log2(xcell); used by xcells
-\   xcell       target cell size in bytes
-\   xcell1-     xcell - 1
-\   xcell_mask  align-up mask
-\   xcells      ( n -- n*xcell )
-\   xalign      ( a -- a' ) align address up to a cell
-\   xcell+      ( a -- a+xcell )
+\   XCELL_BITS  target cell size in bits
+\   XCELLLOG    log2(XCELL); used by XCELLS
+\   XCELL       target cell size in bytes
+\   XCELL1-     XCELL - 1
+\   XCELL_MASK  align-up mask
+\   XCELLS      ( n -- n*XCELL )
+\   XALIGN      ( a -- a' ) align address up to a cell
+\   XCELL+      ( a -- a+XCELL )
 \
-\ Word entry layout (entry = link cell; 'current' points here):
+\ Word entry layout (entry = link cell; 'CURRENT' points here):
 \   +0              link
-\   +xcell          token / xt (code address)
+\   +XCELL          token / xt (code address)
 \   +2 cells        compile-mode behavior
 \   +3 cells        zero-terminated name
 \   code ...        no instruction alignment on x86
 \
 \ Absolute addresses are 0001xxxx (image base 10000).
-\ xword_comp is the compile-behavior field offset.
-\ xname_from_token is the name offset from the token cell.
-\ xliteral_size and xret_size are the lengths emitted by
-\ literal and ret,; xstub_size is their sum, the payload
+\ XWORD_COMP is the compile-behavior field offset.
+\ XNAME_FROM_TOKEN is the name offset from the token cell.
+\ XLITERAL_SIZE and XRET_SIZE are the lengths emitted by
+\ LITERAL and RET,; XSTUB_SIZE is their sum, the payload
 \ of create.
-\ xcall_size is the length of a call instruction.
-\ xquote_open_size is the same length, named for x{{.
-\ xjump_size is the length of a forward jump placeholder.
-\ xrel_size is the width of a relative branch
+\ XCALL_SIZE is the length of a call instruction.
+\ XQUOTE_OPEN_SIZE is the same length, named for X{{.
+\ XJUMP_SIZE is the length of a forward jump placeholder.
+\ XREL_SIZE is the width of a relative branch
 \ displacement field.
 20 constant xcell_bits          \ 32 bits
 2  constant xcelllog            \ for shifts
@@ -178,7 +178,7 @@ create labels
 \
 \ Backward labels: at the point when they are needed their
 \ address is already known. We just store the current address
-\ when they are defined, and read it from the label_cell when
+\ when they are defined, and read it from the LABEL_CELL when
 \ they are needed.
 \
 \ Forward labels are trickier: we store the location where the
@@ -413,16 +413,16 @@ xcurrent xsearch xname_from_token }~ -
 {: x'
 word xfind }~ w@
 
-\ target pointer to callcomp
+\ target pointer to CALLCOMP
 0 variable callcomp
 
-\ target pointer to endcomp
+\ target pointer to ENDCOMP
 0 variable endcomp
 
-\ target pointer to execute
+\ target pointer to EXECUTE
 0 variable exec
 
-\ target create
+\ target XCREATE
 {: xcreate
 xlast
 xlink
@@ -438,13 +438,13 @@ s,
 $ swap w!
 }
 
-\ target literal
+\ target XLITERAL
 {: xliteral ( x -( heap )- )
 tos_store
 eax swap mov_rr,x
 }
 
-\ target address literal
+\ target address XALITERAL
 {: xaliteral ( a -( heap )- )
 tos_store
 eax swap mov_rr,aa
@@ -608,25 +608,25 @@ SEED IMAGE_BASE - constant image_limit
 { $ image_limit u<
 } { "  image too large" abort } }~|
 
-\ native word definition
+\ NATIVE word definition
 {: native
 xcreate
 }
 
-\ postpone colon definition
+\ POSTPONE colon definition
 {: postpone
 native
 E9 c, 0 d, \ jmp forward
 }
 
-\ effect definition
+\ EFFECT definition
 {: effect ( -- )
 native
 effects @ dup xcell+ effects !
 jmp_[aa]
 }
 
-\ constant definition
+\ CONSTANT definition
 {: constant
 native
 tos_store
@@ -634,7 +634,7 @@ eax swap mov_rr,x
 ret
 }
 
-\ address definition (because of 16-bit cells)
+\ ADDRESS definition (because of 16-bit cells)
 {: address
 native
 tos_store
@@ -820,7 +820,7 @@ sys.mprotect syscall
 eax pop
 ret
 
-\ runtime call site: E8 rel32 is xcall_size bytes
+\ runtime call site: E8 rel32 is XCALL_SIZE bytes
 native callcomp
 $ callcomp !
 ecx xcall_size mov_rr,x
@@ -839,7 +839,7 @@ ret
 
 x' callcomp does
 
-\ runtime jump site: E9 rel32 is xjump_size bytes
+\ runtime jump site: E9 rel32 is XJUMP_SIZE bytes
 native tailcomp
 ecx xjump_size mov_rr,x
 1 label call
@@ -1421,14 +1421,14 @@ x' >lit does
 
 x' >lit does
 
-\ xquote_open_size is 5: E8 plus a rel32.  The bracket
+\ XQUOTE_OPEN_SIZE is 5: E8 plus a rel32.  The bracket
 \ cannot be used here: [ needs interpret, which needs ",
-\ which needs quotate, which needs {{.
+\ which needs QUOTATE, which needs {{.
 {: {{
 E8 c, 0 }~ d,
 
-\ xrel_size is 4.  The bracket cannot be used here for the
-\ same reason as {{; keep 4 in sync with xrel_size.
+\ XREL_SIZE is 4.  The bracket cannot be used here for the
+\ same reason as {{; keep 4 in sync with XREL_SIZE.
 {: }}
 dup here swap - swap 4 - d!
 89 c, 03 c,
@@ -1502,7 +1502,7 @@ bl constant bl
 {: ws
 bl }~ u<=
 
-\ check printable
+\ check PRINTABLE
 {: printable
 ascii ! u>= ascii ~ }~ u<=
 
@@ -1626,7 +1626,7 @@ A }~ emit
 {: space
 bl }~ emit
 
-\ Print the zero-terminated message to stderr and exit with
+\ Print the zero-terminated message to STDERR and exit with
 \ code 2. Native and low-level: the high-level output words
 \ write to stdout, and the message needs one sys.write. Scan
 \ to the terminator, write the message with one sys.write,
@@ -1658,7 +1658,7 @@ sys.exit syscall
 
 \ emit all context words
 {: words
-\ name = token + xname_from_token
+\ name = token + XNAME_FROM_TOKEN
 { current traverse& cell+ cell+ s. space }~fail
 ' cr }~|
 
@@ -1679,7 +1679,7 @@ x' execute does
 
 {: ] }~fail
 
-\ x' is interpret-only; ] must compile to a failure
+\ X' is interpret-only; ] must compile to a failure
 x' }~fail does
 
 \ list extension
@@ -1703,7 +1703,7 @@ current !
 here cell+ cell+ pad length + 1+ ,
 ' callcomp ,
 pad s, 0 c,
-\ payload = code + xliteral_size + xret_size
+\ payload = code + XLITERAL_SIZE + XRET_SIZE
 here [ xstub_size xliteral ] +
 literal
 ret, }
@@ -1715,7 +1715,7 @@ create }~ ,
 \ redefine last word
 {: redefine
 last
-\ name = entry + xword_name
+\ name = entry + XWORD_NAME
 [ xword_name xliteral ] + skipstr
 dp }~ !
 
@@ -1732,7 +1732,7 @@ here 7 +		\ skip jmp [addr] to the handler cell
 FF c, 24 c, 25 c, d,	\ jmp [address]
 }~ ,
 
-\ postpone colon definition
+\ POSTPONE colon definition
 {: postpone
 create redefine
 'id tailcomp }
@@ -1767,7 +1767,7 @@ here ' compile 'id|
 
 \ change compile mode behavior
 {: does ( x -( heap )- )
-\ compile-mode cell = xword_comp
+\ compile-mode cell = XWORD_COMP
 last cell+ cell+ }~ !
 
 \ make most recently definted word immediate

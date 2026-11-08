@@ -37,7 +37,7 @@ output \ this must be on the first line
 hex
 
 \ [port] IMAGE BASE
-\ Image base: ximage_base_hi:low16(offset). The image must stay
+\ Image base: XIMAGE_BASE_HI:low16(offset). The image must stay
 \ below 18000 (the system variables), and no host value is wider
 \ than 16 bits.
 1 constant ximage_base_hi
@@ -54,33 +54,33 @@ hex
 \ Values describe the target, not the compiling Seed. Offsets
 \ are in target bytes; the host may have a different cell size.
 \
-\   xcell_bits  target cell size in bits
-\   xcelllog    log2(xcell); used by xcells
-\   xcell       target cell size in bytes
-\   xcell1-     xcell - 1
-\   xcell_mask  align-up mask
-\   xcells      ( n -- n*xcell )
-\   xalign      ( a -- a' ) align address up to a cell
-\   xcell+      ( a -- a+xcell )
-\   xcode_align_bytes instruction alignment in bytes
+\   XCELL_BITS  target cell size in bits
+\   XCELLLOG    log2(XCELL); used by XCELLS
+\   XCELL       target cell size in bytes
+\   XCELL1-     XCELL - 1
+\   XCELL_MASK  align-up mask
+\   XCELLS      ( n -- n*XCELL )
+\   XALIGN      ( a -- a' ) align address up to a cell
+\   XCELL+      ( a -- a+XCELL )
+\   XCODE_ALIGN_BYTES instruction alignment in bytes
 \
-\ Word entry layout (entry = link cell; 'current' points here):
+\ Word entry layout (entry = link cell; 'CURRENT' points here):
 \   +0              link
-\   +xcell          token / xt (code address)
+\   +XCELL          token / xt (code address)
 \   +2 cells        compile-mode behavior
 \   +3 cells        zero-terminated name
-\   code ...        aligned to xcode_align_bytes
+\   code ...        aligned to XCODE_ALIGN_BYTES
 \
-\ xword_comp is the compile-behavior field offset.
-\ xname_from_token is the name offset from the token cell.
-\ xliteral_size and xret_size are the lengths emitted by
-\ literal and ret,; xstub_size is their sum, the payload
+\ XWORD_COMP is the compile-behavior field offset.
+\ XNAME_FROM_TOKEN is the name offset from the token cell.
+\ XLITERAL_SIZE and XRET_SIZE are the lengths emitted by
+\ LITERAL and RET,; XSTUB_SIZE is their sum, the payload
 \ of create.
-\ xinst_size is the width of a target instruction word.
-\ xcall_size is the size of the stack-call sequence.
-\ xquote_open_size is the size of the quotation opener emitted
-\ by x{{; it equals xcall_size.
-\ xrel_size is the width of a relative branch field.
+\ XINST_SIZE is the width of a target instruction word.
+\ XCALL_SIZE is the size of the stack-call sequence.
+\ XQUOTE_OPEN_SIZE is the size of the quotation opener emitted
+\ by X{{; it equals XCALL_SIZE.
+\ XREL_SIZE is the width of a relative branch field.
 40 constant xcell_bits          \ 64 bits
 3  constant xcelllog            \ for shifts
 xcell_bits 3 rshift constant xcell
@@ -176,7 +176,7 @@ create labels
 \
 \ Backward labels: at the point when they are needed their
 \ address is already known. We just store the current address
-\ when they are defined, and read it from the label_cell when
+\ when they are defined, and read it from the LABEL_CELL when
 \ they are needed.
 \
 \ Forward labels are trickier: we store the location where the
@@ -820,16 +820,16 @@ xcurrent xsearch xname_from_token }~ -
 {: x'
 word xfind }~ w@
 
-\ target pointer to callcomp
+\ target pointer to CALLCOMP
 0 variable callcomp
 
-\ target pointer to endcomp
+\ target pointer to ENDCOMP
 0 variable endcomp
 
-\ target pointer to execute
+\ target pointer to EXECUTE
 0 variable exec
 
-\ target create
+\ target XCREATE
 {: xcreate
 xlast
 xlink
@@ -846,14 +846,14 @@ xcode_align_bytes align
 $ swap w!
 }
 
-\ target literal
+\ target XLITERAL
 {: xliteral ( x -( heap )- )
 xcode_align_bytes align
 tos_store
 X0 swap mov_rr,x
 }
 
-\ target address literal
+\ target address XALITERAL
 {: xaliteral ( a -( heap )- )
 xcode_align_bytes align
 tos_store
@@ -1027,25 +1027,25 @@ SEED IMAGE_BASE - constant image_limit
 { $ image_limit u<
 } { "  image too large" abort } }~|
 
-\ native word definition
+\ NATIVE word definition
 {: native
 xcreate
 }
 
-\ postpone colon definition
+\ POSTPONE colon definition
 {: postpone
 native
 0 w, 1400 w, \ B .+0, patched later
 }
 
-\ effect definition
+\ EFFECT definition
 {: effect ( -- )
 native
 effects @ dup 8 + effects !
 jmp_[aa]
 }
 
-\ constant definition
+\ CONSTANT definition
 {: constant
 native
 tos_store
@@ -1053,7 +1053,7 @@ X0 swap mov_rr,x
 ret
 }
 
-\ address definition (because of 16-bit cells)
+\ ADDRESS definition (because of 16-bit cells)
 {: address
 native
 tos_store
@@ -1231,7 +1231,7 @@ X5 1 mov_rr,x
 sys.exit syscall
 
 \ Die loudly if a generated call cannot reach its target.
-\ The message is emitted inline and jumped over; abort writes
+\ The message is emitted inline and jumped over; ABORT writes
 \ it and exits. Does not return.
 native xcall_overflow
 D jmp_f
@@ -1245,7 +1245,7 @@ X0 C lb mov_rr,aa
 F jmp_f
 
 \ ( X0 target, X3 site -- )
-\ Clobbers X16/X17 and PSTATE flags. Jumps to xcall_overflow
+\ Clobbers X16/X17 and PSTATE flags. Jumps to XCALL_OVERFLOW
 \ when the byte displacement does not fit the signed 26-bit
 \ B field.
 native xcall_check_range
@@ -1262,7 +1262,7 @@ x' xcall_overflow ja
 ret
 
 \ Runtime call site: adr; str; B, three instructions.
-\ The host call site is xcall_size bytes; this form is smaller.
+\ The host call site is XCALL_SIZE bytes; this form is smaller.
 native callcomp
 $ callcomp !
 X3 xinst_size mov_rr,x
@@ -1302,7 +1302,7 @@ ret
 
 x' callcomp does
 
-\ Runtime jump site: one B instruction (xinst_size).
+\ Runtime jump site: one B instruction (XINST_SIZE).
 native tailcomp
 X3 xinst_size mov_rr,x
 1 lb call
@@ -1719,7 +1719,7 @@ X3 jmp_rr
 \ [port] target-side 32-bit emitters. A 16-bit host cell cannot
 \ hold it whole, so the halves are passed apart. They are native
 \ because their bodies are emitted before the compiler
-\ words they otherwise need (literal, ret,).
+\ words they otherwise need (LITERAL, RET,).
 native x32,
 binary
 X3 10 shl_rr,s
@@ -1980,10 +1980,10 @@ native }~
 
 x' drop does
 
-\ xcode_align_bytes is the instruction boundary. Emit it as a
-\ target constant, then derive xcode_align_addr and xcode_align.
+\ XCODE_ALIGN_BYTES is the instruction boundary. Emit it as a
+\ target constant, then derive XCODE_ALIGN_ADDR and XCODE_ALIGN.
 \ Target-side words; x marks this cross/target code-alignment
-\ family. The host uses xcode_align_bytes with its own align.
+\ family. The host uses XCODE_ALIGN_BYTES with its own align.
 native xcode_align_bytes
 xcode_align_bytes xliteral
 ret
@@ -2021,9 +2021,9 @@ x' >lit does
 
 x' >lit does
 
-\ xquote_open_size is 10 (hex), 16 bytes: four instructions.
+\ XQUOTE_OPEN_SIZE is 10 (hex), 16 bytes: four instructions.
 \ bracket cannot be used here: [ needs interpret, which
-\ needs ", which needs quotate, which needs {{.
+\ needs ", which needs QUOTATE, which needs {{.
 {: {{
 xcode_align
 here 10 +
@@ -2042,10 +2042,10 @@ x32,
 \ literal), so align to 4 bytes before patching the branch and
 \ emitting the continuation: AArch64 instructions, and thus
 \ branch targets and displacements, are 4-byte units.
-\ offset in words: (here - token + xinst_size) / 4
-\ patch the B at token - xinst_size.  xinst_size is 4 and 2 is
-\ log2(xinst_size); the bracket cannot be used here for the
-\ same reason as {{, so keep 4 and 2 in sync with xinst_size.
+\ offset in words: (HERE - token + XINST_SIZE) / 4
+\ patch the B at token - XINST_SIZE.  XINST_SIZE is 4 and 2 is
+\ log2(XINST_SIZE); the bracket cannot be used here for the
+\ same reason as {{, so keep 4 and 2 in sync with XINST_SIZE.
 \ The last instruction is ldr x0,[x29],#8: it pops the
 \ quotation continuation into TOS.
 {: }}
@@ -2129,7 +2129,7 @@ bl constant bl
 {: ws
 bl }~ u<=
 
-\ check printable
+\ check PRINTABLE
 {: printable
 ascii ! u>= ascii ~ }~ u<=
 
@@ -2253,13 +2253,13 @@ A }~ emit
 {: space
 bl }~ emit
 
-\ Print the zero-terminated message to stderr and exit with
+\ Print the zero-terminated message to STDERR and exit with
 \ code 2. Native and low-level: the high-level output words
 \ write to stdout, and the message needs one sys.write. Scan
 \ to the terminator, write the message with one sys.write,
 \ write the newline with a second one-byte write, and exit.
 native abort ( a -- )
-\ Patch the forward branch from xcall_overflow.
+\ Patch the forward branch from XCALL_OVERFLOW.
 F rlabel
 X1 X0 mov_rr,rr
 X2 X2 xor_rr,rr
@@ -2285,7 +2285,7 @@ sys.exit syscall
 
 \ emit all context words
 {: words
-\ name = token + xname_from_token
+\ name = token + XNAME_FROM_TOKEN
 { current traverse& cell+ cell+ s. space }~fail
 ' cr }~|
 
@@ -2306,7 +2306,7 @@ x' execute does
 
 {: ] }~fail
 
-\ x' is interpret-only; ] must compile to a failure
+\ X' is interpret-only; ] must compile to a failure
 x' }~fail does
 
 \ list extension
@@ -2333,7 +2333,7 @@ pad s, 0 c,
 xcode_align
 \ token = entry + xword_token
 here last cell+ !
-\ payload = code + xliteral_size + xret_size
+\ payload = code + XLITERAL_SIZE + XRET_SIZE
 here [ xstub_size xliteral ] +
 literal
 ret, }
@@ -2345,7 +2345,7 @@ create }~ ,
 \ redefine last word
 {: redefine
 last
-\ name = entry + xword_name
+\ name = entry + XWORD_NAME
 [ xword_name xliteral ] + skipstr
 xcode_align_addr
 dp }~ !
@@ -2364,7 +2364,7 @@ create redefine
 here 8 + ,
 }~ ,
 
-\ postpone colon definition
+\ POSTPONE colon definition
 {: postpone
 create redefine
 'id tailcomp }
@@ -2403,7 +2403,7 @@ here ' compile 'id|
 
 \ change compile mode behavior
 {: does ( x -( heap )- )
-\ compile-mode cell = xword_comp
+\ compile-mode cell = XWORD_COMP
 last cell+ cell+ }~ !
 
 \ make most recently definted word immediate

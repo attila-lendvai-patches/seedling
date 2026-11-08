@@ -49,11 +49,11 @@ hex
 \
 \ Word entry (threaded; no token/comp cells):
 \   +0              link (16-bit)
-\   +xword_name     zero-terminated name
+\   +XWORD_NAME     zero-terminated name
 \   after the name  threaded code / payload
-\   `create` appends a call to `dat,` (the data interpreter).
+\   `CREATE` appends a call to `DAT,` (the data interpreter).
 \
-\ `jr` displacements are xrel_size (1) byte; `jp`/`call` use
+\ `jr` displacements are XREL_SIZE (1) byte; `jp`/`call` use
 \ 2-byte absolute addresses. The `8 align`s in Part II align
 \ threading and restart data, not instructions.
 2 constant xcell
@@ -371,7 +371,7 @@ xcurrent xsearch }~ skipstr
 {: x'
 word xfind 2 + offset @ }~ -
 
-\ target create
+\ target XCREATE
 {: xcreate
 xlast
 xlink
@@ -400,28 +400,28 @@ lits @ w, 0 c, }~ here
 {: x}} ( a -( heap )- )
 dup here swap - swap xrel_size - }~ c!
 
-\ target pointer to comma
+\ target pointer to COMMA
 0 variable comma
 
-\ target pointer to endcomp
+\ target pointer to ENDCOMP
 0 variable endcomp
 
-\ target pointer to endtail
+\ target pointer to ENDTAIL
 0 variable endtail
 
-\ target pointer to selfref
+\ target pointer to SELFREF
 0 variable selfref
 
-\ target pointer to ~selfref
+\ target pointer to ~SELFREF
 0 variable ~selfref
 
-\ target pointer to >lit
+\ target pointer to >LIT
 0 variable >lit
 
-\ target pointer to quotate
+\ target pointer to QUOTATE
 0 variable quotate
 
-\ target pointer to execute
+\ target pointer to EXECUTE
 0 variable exec
 
 \ create association
@@ -562,7 +562,7 @@ drop
 { 0 }~ c,
 }~|
 
-\ cross-quotate
+\ XQUOTATE
 {: xquotate
 x{{
 { pad " {" s= drop vm ' xcompile 'id}~|
@@ -573,22 +573,22 @@ x}}
 
 quotate { drop xquotate }               xcomps assoc
 
-\ native word definition
+\ NATIVE word definition
 {: native
 xcreate
 comma @ w, }
 
-\ postpone colon definition
+\ POSTPONE colon definition
 {: postpone
 native
 0 jp }
 
-\ effect definition
+\ EFFECT definition
 {: effect ( x -- )
 native
 jp }
 
-\ constant definition
+\ CONSTANT definition
 {: constant
 native
 bc swap ld_rr,xx
@@ -1828,7 +1828,7 @@ bl constant bl
 {: ws ( c -( fail )- c )
 bl }~ u<=
 
-\ check printable
+\ check PRINTABLE
 {: printable ( c -( fail )- c )
 ascii ! u>= ascii ~ }~ u<=
 
@@ -1989,7 +1989,7 @@ here last ,
 create redefine 
 vm, literal ' context , ' }~ , ' ! }~ ,
 
-\ postpone colon definition
+\ POSTPONE colon definition
 {: postpone ( -( heap )- )
 'id }~ effect
 
@@ -2097,7 +2097,7 @@ x' execute does
 
 {: ] }~fail
 
-\ x' is interpret-only; ] must compile to a failure
+\ X' is interpret-only; ] must compile to a failure
 x' }~fail does
 
 \ numeral functions
