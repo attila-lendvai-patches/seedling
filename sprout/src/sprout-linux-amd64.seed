@@ -542,7 +542,8 @@ pad s= cut }~ nip
 xcurrent xsearch xname_from_token }~ -
 
 {: undef ( -( pad emit )- )
-pad s. "  undefined" s. cr }~ bye
+pad s. "  undefined" abort
+}~ drop
 
 {: xfind' ( -( pad bye )- a )
 ' xfind ' undef }~|
@@ -754,8 +755,8 @@ EFFECTS variable effects
 SPROUT IMAGE_BASE - constant image_limit
 
 {: check_image_size
-$ image_limit u<
-}
+{ $ image_limit u<
+} { "  image too large" abort } }~|
 
 \ native word definition
 {: native
@@ -2431,8 +2432,8 @@ s. space }~fail
 
 \ undefined word
 {:: undef
-{ pad s. "  undefined" s. }~ cr
-}~ stderr
+{ pad s. "  undefined" abort }
+}~ drop
 
 effect ok
 

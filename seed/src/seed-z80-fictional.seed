@@ -522,8 +522,8 @@ FF00 constant STK_TOP \ 1F00 bytes for the return stack
 STK_BOT constant image_limit
 
 {: check_image_size
-$ image_limit u<
-}
+{ $ image_limit u<
+} { "  image too large" abort } }~|
 
 \ labels
 7 constant start

@@ -923,6 +923,15 @@ traverse& @ third s= cut drop nip cell+ cell+ @ }
 " 'self"	{ drop dup
 		offset @ - xaliteral }	xcomps assoc
 
+\ A failed target lookup is normal at line end, a terminator,
+\ or at a host word. Anything else is an undefined word.
+{: xcompile_fail
+{ pad c@ 0= }
+{ { pad c@ 7D = }                 \ 7D is '}'
+  { { pad find drop }
+    { pad s. "  undefined" abort } | } | } |
+}
+
 \ while loop
 {: while
 >r \ subject on return stack
@@ -1015,8 +1024,8 @@ EFFECTS variable effects
 SEED IMAGE_BASE - constant image_limit
 
 {: check_image_size
-$ image_limit u<
-}
+{ $ image_limit u<
+} { "  image too large" abort } }~|
 
 \ native word definition
 {: native
@@ -1098,7 +1107,7 @@ $ ' xcompile 'id|
 native
 here
 ' xcompile
-' drop
+' xcompile_fail
 }~|
 
 
