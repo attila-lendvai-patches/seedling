@@ -2295,7 +2295,8 @@ x' execute does
 
 {: ] }~fail
 
-x' }~fail does   \  TODO: not allowed in compile mode
+\ x' is interpret-only; ] must compile to a failure
+x' }~fail does
 
 \ list extension
 {: link
@@ -2436,7 +2437,8 @@ word
 ' find
 { pad s>number ' literal }
 | execute
-}~ compile  \ TODO: why }~self doesn't work?
+\ }~self would branch through the unpatched {:: stub
+}~ compile
 
 \ ok effect
 {: stdok

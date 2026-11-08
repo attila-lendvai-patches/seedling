@@ -1922,7 +1922,8 @@ x' execute does
 
 {: ] }~fail
 
-x' }~fail does		\ TODO: not allowed in compile mode
+\ x' is interpret-only; ] must compile to a failure
+x' }~fail does
 
 \ numeral functions
 
